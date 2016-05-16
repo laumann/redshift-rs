@@ -1,0 +1,11 @@
+[package]
+name = "redshift-rs"
+version = "0.1.0"
+authors = ["Thomas Jespersen <laumann@protonmail.com>"]
+
+[dependencies]
+time = "0.1"
+
+[dependencies.xcb]
+version = "0.7"
+features = ["randr"]
