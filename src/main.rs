@@ -61,6 +61,27 @@ impl TransitionScheme {
             night: ColorSetting::new()
         }
     }
+
+    /**
+     * Given an elevation, compute a color setting from this scheme's settings
+     */
+    fn interpolate_color_settings(&self, elevation: f64) -> ColorSetting {
+        let day = &self.day;
+        let night = &self.night;
+
+        let al = (self.low - elevation) / (self.low - self.high);
+        let alpha = al.min(1.0).max(0.0); // clamp to [0.0, 1.0]
+
+        ColorSetting {
+            temp: (1.0-alpha) * night.temp + alpha * day.temp,
+            brightness: (1.0-alpha) * night.brightness + alpha * day.brightness,
+            gamma: [
+                (1.0-alpha) * night.gamma[0] + alpha*day.gamma[0],
+                (1.0-alpha) * night.gamma[1] + alpha*day.gamma[1],
+                (1.0-alpha) * night.gamma[2] + alpha*day.gamma[2]
+            ]
+        }
+    }
 }
 
 struct Crtc {
@@ -77,35 +98,6 @@ struct RandrState {
     screen_num: i32,
     window_dummy: u32,
     crtcs: Vec<Crtc>
-}
-
-/**
- * Ensure mid is at least lo, and at most up
- */
-#[inline]
-fn clamp(lo: f64, mid: f64, up: f64) -> f64 {
-    if mid < lo {
-        lo
-    } else if mid > up {
-        up
-    } else {
-        mid
-    }
-}
-
-fn interpolate_color_settings(elevation: f64, trans: &TransitionScheme) -> ColorSetting {
-    let day = &trans.day;
-    let night = &trans.night;
-
-    let alpha = clamp(0.0, (trans.low - elevation) / (trans.low - trans.high), 1.0);
-
-    let mut res = ColorSetting::new();
-    res.temp = (1.0-alpha) * night.temp + alpha * day.temp;
-    res.brightness = (1.0-alpha) * night.brightness + alpha * day.brightness;
-    for i in 0..3 {
-        res.gamma[i] = (1.0-alpha) * night.gamma[i] + alpha*day.gamma[i];
-    }
-    res
 }
 
 fn main() {
@@ -162,7 +154,7 @@ fn main() {
         // Ongoing short transition?
 
         // Interpolate between 6500K and calculated temperature
-        let color_setting = interpolate_color_settings(elev, &scheme);
+        let color_setting = scheme.interpolate_color_settings(elev);
         println!("Color temperature: {:?}K", color_setting.temp);
         println!("Brightness: {:?}", color_setting.brightness);
 
