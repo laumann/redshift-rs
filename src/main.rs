@@ -5,6 +5,8 @@ extern crate time;
 use std::thread;
 use xcb::randr;
 
+mod colorramp;
+mod location;
 mod solar;
 
 /**
@@ -12,25 +14,17 @@ mod solar;
  */
 const RANDR_MAJOR_VERSION: u32 = 1;
 const RANDR_MINOR_VERSION: u32 = 3;
-const NEUTRAL_TEMP:        f64 = 6500.0;
-const DEFAULT_DAY_TEMP:    f64 = 5500.0;
-const DEFAULT_NIGHT_TEMP:  f64 = 3500.0;
+const NEUTRAL_TEMP:        i32 = 6500;
+const DEFAULT_DAY_TEMP:    i32 = 5500;
+const DEFAULT_NIGHT_TEMP:  i32 = 3500;
 const DEFAULT_BRIGHTNESS:  f64 = 1.0;
 const DEFAULT_GAMMA:       f64 = 1.0;
 
 /**
- * Latitude and longitude location
- */
-struct Location {
-    lat: f64,
-    lon: f64
-}
-
-/**
  * A color setting
  */
-struct ColorSetting {
-    temp: f64,
+pub struct ColorSetting {
+    temp: i32,
     gamma: [f64; 3],
     brightness: f64,
 }
@@ -38,7 +32,7 @@ struct ColorSetting {
 impl ColorSetting {
     fn new() -> ColorSetting {
         ColorSetting {
-            temp: -1.0,
+            temp: -1,
             gamma: [std::f64::NAN, std::f64::NAN, std::f64::NAN],
             brightness: std::f64::NAN
         }
@@ -55,9 +49,9 @@ struct TransitionScheme {
 impl TransitionScheme {
     fn new() -> TransitionScheme {
         TransitionScheme {
-            high: 3.0,
-            low: solar::CIVIL_TWILIGHT_ELEV,
-            day: ColorSetting::new(),
+            high:  3.0,
+            low:   solar::CIVIL_TWILIGHT_ELEV,
+            day:   ColorSetting::new(),
             night: ColorSetting::new()
         }
     }
@@ -73,7 +67,7 @@ impl TransitionScheme {
         let alpha = al.min(1.0).max(0.0); // clamp to [0.0, 1.0]
 
         ColorSetting {
-            temp: (1.0-alpha) * night.temp + alpha * day.temp,
+            temp: ((1.0-alpha) * night.temp as f64 + alpha * day.temp as f64) as i32,
             brightness: (1.0-alpha) * night.brightness + alpha * day.brightness,
             gamma: [
                 (1.0-alpha) * night.gamma[0] + alpha*day.gamma[0],
@@ -136,6 +130,11 @@ fn main() {
         }
     }
 
+    let loc = location::Location {
+        lat: 55.0,
+        lon: 12.0
+    };
+
     let mut now;
     loop {
         now = systemtime_get_time(); //::precise_time_s();
@@ -145,10 +144,7 @@ fn main() {
 
         // Interpolate color settings: ColorSetting
 
-        let lat = 55.0;
-        let lon = 12.0;
-
-        let elev = solar::elevation(now, lat, lon);
+        let elev = solar::elevation(now, &loc);
         println!("Current angular elevation of the sun: {:?}", elev);
 
         // Ongoing short transition?
@@ -158,8 +154,7 @@ fn main() {
         println!("Color temperature: {:?}K", color_setting.temp);
         println!("Brightness: {:?}", color_setting.brightness);
 
-        // randr_state.set_temperature(&color_setting)
-
+        randr_state.set_temperature(&color_setting);
 
         // Sleep for 5 seconds or 0.1 second
         thread::sleep(std::time::Duration::from_secs(1));
@@ -171,13 +166,29 @@ fn systemtime_get_time() -> f64 {
     now.sec as f64 + (now.nsec as f64 / 1000000.0)
 }
 
-
 /**
  *
  */
 impl RandrState {
-    fn set_temperature(&mut self, setting: &ColorSetting) {
+    fn set_temperature(&self, setting: &ColorSetting) {
+        for crtc in self.crtcs.iter() {
+            self.set_crtc_temperature(setting, crtc);
+        }
+    }
 
+    fn set_crtc_temperature(&self, setting: &ColorSetting, crtc: &Crtc) {
+        let ramp_size = crtc.ramp_size;
+
+        /* Create new gamma ramps */
+        let (red, green, blue) = (&[], &[], &[]);
+
+        
+
+        randr::set_crtc_gamma_checked(&self.conn,
+                                      crtc.id,
+                                      red,
+                                      green,
+                                      blue);
     }
 
     /**

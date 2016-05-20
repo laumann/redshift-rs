@@ -5,6 +5,7 @@
  * from some JavaScript code)
  */
 use time;
+use location;
 
 /**
  * Model of atmospheric refraction near horizon (in degrees)
@@ -32,7 +33,6 @@ pub const SUNSET:     usize = 6;
 pub const CIVIL_DUSK: usize = 7;
 pub const NAUT_DUSK:  usize = 8;
 pub const ASTRO_DUSK: usize = 9;
-
 
 /**
  * Computed angles (or angels), these can be re-computed using the
@@ -172,20 +172,20 @@ pub fn elevation_from_hour_angle(lat: f64, decl: f64, ha: f64) -> f64 {
      + lat.to_radians().sin() * decl.sin()).asin()
 }
 
-pub fn elevation_from_time(jd: JulianDay, lat: f64, lon: f64) -> f64 {
+pub fn elevation_from_time(jd: JulianDay, loc: &location::Location) -> f64 {
     let t = jd.to_julian_cent();
     let offset = (jd - jd.round() - 0.5) * 1440.0;
 
     let eq_time = t.equation_of_time();
-    let ha = ((720.0 - offset - eq_time)/4.0 - lon).to_radians();
+    let ha = ((720.0 - offset - eq_time)/4.0 - loc.lon).to_radians();
     let decl = t.solar_declination();
-    elevation_from_hour_angle(lat, decl, ha)
+    elevation_from_hour_angle(loc.lat, decl, ha)
 }
 
 /* Compute the solar angular elevation at the given location and time */
-pub fn elevation(t: f64, lat: f64, lon: f64) -> f64 {
+pub fn elevation(t: f64, loc: &location::Location) -> f64 {
     let jd = JulianDay::from_epoch(t);
-    elevation_from_time(jd, lat, lon).to_degrees()
+    elevation_from_time(jd, loc).to_degrees()
 }
 
 #[cfg(test)]
