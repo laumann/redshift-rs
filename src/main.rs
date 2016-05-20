@@ -120,50 +120,59 @@ fn main() {
     }
 
     if scheme.day.gamma[0].is_nan() {
-        for g in scheme.day.gamma.iter_mut() {
-            *g = DEFAULT_GAMMA;
-        }
+        for g in scheme.day.gamma.iter_mut() { *g = DEFAULT_GAMMA }
     }
     if scheme.night.gamma[0].is_nan() {
-        for g in scheme.night.gamma.iter_mut() {
-            *g = DEFAULT_GAMMA;
-        }
+        for g in scheme.night.gamma.iter_mut() { *g = DEFAULT_GAMMA }
     }
 
     let loc = location::Location {
-        lat: 55.0,
-        lon: 12.0
+        lat: 55.7,
+        lon: 12.6
     };
 
     let mut now;
+    let mut prev_color_setting = ColorSetting::new();
+    let mut prev_elev = 0.0;
     loop {
-        now = systemtime_get_time(); //::precise_time_s();
-        println!("Adjusting at {:?}", now);
+        now = systemtime_get_time(); // - 524_000.0;
+        //println!("now={:?}", now);
 
         // Compute elevation
 
         // Interpolate color settings: ColorSetting
 
         let elev = solar::elevation(now, &loc);
-        println!("Current angular elevation of the sun: {:?}", elev);
+        //println!("{:?}", (elev - prev_elev).abs());
+        if (elev - prev_elev).abs() > 0.01 {
+            prev_elev = elev;
+            println!("Current angular elevation of the sun: {:?}", elev);
+        }
 
         // Ongoing short transition?
 
         // Interpolate between 6500K and calculated temperature
         let color_setting = scheme.interpolate_color_settings(elev);
-        println!("Color temperature: {:?}K", color_setting.temp);
-        println!("Brightness: {:?}", color_setting.brightness);
-
+        if color_setting.temp != prev_color_setting.temp {
+            println!("Color temperature: {:?}K", color_setting.temp);
+        }
+        if color_setting.brightness != prev_color_setting.brightness {
+            println!("Brightness: {:?}", color_setting.brightness);
+        }
         randr_state.set_temperature(&color_setting);
 
         // Sleep for 5 seconds or 0.1 second
-        thread::sleep(std::time::Duration::from_secs(1));
+        thread::sleep(std::time::Duration::from_millis(100));
+        //thread::sleep(std::time::Duration::from_secs(5));
+
+        /* Save temperature */
+        prev_color_setting = color_setting;
     }
 }
 
 fn systemtime_get_time() -> f64 {
     let now = time::get_time();
-    now.sec as f64 + (now.nsec as f64 / 1000000.0)
+    now.sec as f64 + (now.nsec as f64 / 1_000_000_000.0)
 }
 
 /**
@@ -177,18 +186,17 @@ impl RandrState {
     }
 
     fn set_crtc_temperature(&self, setting: &ColorSetting, crtc: &Crtc) {
-        let ramp_size = crtc.ramp_size;
+        //println!("CRTC[{:?}]", crtc.id);
 
         /* Create new gamma ramps */
-        let (red, green, blue) = (&[], &[], &[]);
+        let (red, green, blue) = colorramp::gen_colorramp(setting,
+                                                          crtc.ramp_size as usize);
 
-        
-
-        randr::set_crtc_gamma_checked(&self.conn,
-                                      crtc.id,
-                                      red,
-                                      green,
-                                      blue);
+        // randr::set_crtc_gamma_checked(&self.conn,
+        //                               crtc.id,
+        //                               &red[..],
+        //                               &green[..],
+        //                               &blue[..]);
     }
 
     /**

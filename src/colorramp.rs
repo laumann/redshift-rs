@@ -1,7 +1,7 @@
 
 
 /**
- * Generate 
+ * Generate color ramps from the given color setting and return 
  */
 pub fn gen_colorramp(setting: &super::ColorSetting, size: usize)
     -> (Vec<u16>, Vec<u16>, Vec<u16>)
@@ -10,8 +10,8 @@ pub fn gen_colorramp(setting: &super::ColorSetting, size: usize)
     let temp_index = (((setting.temp - 1000)/100)*3) as usize;
     
     let white_points = interpolate_color(alpha,
-                                         &BLACKBODY_COLOR[temp_index..temp_index+2],
-                                         &BLACKBODY_COLOR[temp_index+3..temp_index+5]);
+                                         &BLACKBODY_COLOR[temp_index..temp_index+3],
+                                         &BLACKBODY_COLOR[temp_index+3..temp_index+6]);
 
     let (mut gamma_r, mut gamma_g, mut gamma_b) = (Vec::with_capacity(size),
                                                    Vec::with_capacity(size),
@@ -30,6 +30,7 @@ pub fn gen_colorramp(setting: &super::ColorSetting, size: usize)
 
 
 fn interpolate_color<'a>(a: f64, c1: &'a[f64], c2: &'a[f64]) -> (f64, f64, f64) {
+    //println!("|c1|={:?}, |c2|={:?}", c1.len(), c2.len());
     ((1.0-a)*c1[0] + a*c2[0],
      (1.0-a)*c1[1] + a*c2[1],
      (1.0-a)*c1[2] + a*c2[2])
