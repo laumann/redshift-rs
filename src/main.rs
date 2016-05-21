@@ -47,12 +47,6 @@ fn main() {
     randr_state.start();
 
     /* Run continual mode */
-    // Location
-    // Transition scheme
-    // Gamma method
-    // Gamma state (RandR)
-    // transition: int
-    // verbose: bool
 
     /* Init transition scheme - all defaults for now */
     let mut scheme = transition::TransitionScheme::new();
@@ -72,17 +66,21 @@ fn main() {
         for g in scheme.night.gamma.iter_mut() { *g = DEFAULT_GAMMA }
     }
 
+    /* Init location */
     let loc = location::Location {
-        lat: 55.7,
-        lon: 12.6
+        lat: 20.0, //55.7,
+        lon: 70.0, //12.6
     };
 
     // Create signal thread
     let sigint = chan_signal::notify(&[chan_signal::Signal::INT,
-                                       chan_signal::Signal::TERM]);
+                                       chan_signal::Signal::TERM,
+                                       chan_signal::Signal::USR1]);
     let (signal_tx, signal_rx) = chan::sync(0);
     std::thread::spawn(move || {
-        signal_tx.send(sigint.recv());
+        for sig in sigint.iter() {
+            signal_tx.send(sig);
+        }
     });
 
     // Create timer thread
@@ -106,26 +104,43 @@ fn main() {
     });
 
     let mut now;
+    let mut exiting = false;
     let mut prev_color_setting = transition::ColorSetting::new();
-    let mut prev_elev = 0.0;
+    let mut prev_period = transition::Period::None;
+    sleep_tx.send(TimerMsg::Sleep(0));
     loop {
         now = systemtime_get_time();
         chan_select! {
             signal_rx.recv() -> signal => {
-                println!("Received signal: {:?}", signal);
-                break;
+                //println!("Received signal: {:?}", signal);
+                exiting = true;
+                scheme.short_trans_delta = 1;
+                scheme.adjustment_alpha = 0.1;
             },
             timer_rx.recv() => {}
         }
 
-
         // Compute elevation
         let elev = solar::elevation(now, &loc);
 
-        /* Ongoing short transition? */
+        let period = scheme.get_period(elev);
+        if period != prev_period {
+            period.print();
+            prev_period = period;
+        }
 
         // Interpolate between 6500K and calculated temperature
-        let color_setting = scheme.interpolate_color_settings(elev);
+        let mut color_setting = scheme.interpolate_color_settings(elev);
+
+        /* Ongoing short transition? */
+        if scheme.short_transition() {
+            scheme.adjust_transition_alpha();
+            color_setting.temp = (scheme.adjustment_alpha * 6500.0 +
+                                  (1.0-scheme.adjustment_alpha) * color_setting.temp as f64) as i32;
+            color_setting.brightness = scheme.adjustment_alpha * 1.0 +
+                (1.0-scheme.adjustment_alpha) * color_setting.brightness;
+        }
+        
         if color_setting.temp != prev_color_setting.temp {
             println!("Color temperature: {:?}K", color_setting.temp);
         }
@@ -133,18 +148,22 @@ fn main() {
             println!("Brightness: {:?}", color_setting.brightness);
         }
 
-        
-        // randr_state.set_temperature(&color_setting);
+        randr_state.set_temperature(&color_setting);
+
+        if exiting && !scheme.short_transition() {
+            println!("Exiting.");
+            break;
+        }
 
         // Sleep for 5 seconds or 0.1 second
-        //thread::sleep(std::time::Duration::from_millis(100));
-        //thread::sleep(std::time::Duration::from_secs(5));
-        sleep_tx.send(TimerMsg::Sleep(100));
-
+        sleep_tx.send(TimerMsg::Sleep(if scheme.short_transition() { 100 } else { 5000 }));
 
         /* Save temperature */
         prev_color_setting = color_setting;
     }
+    sleep_tx.send(TimerMsg::Exit);
+
+    randr_state.restore();
 }
 
 fn systemtime_get_time() -> f64 {
@@ -157,6 +176,9 @@ fn systemtime_get_time() -> f64 {
  */
 impl RandrState {
 
+    /**
+     * Restore saved gamma ramps
+     */
     fn restore(&self) {
         for crtc in self.crtcs.iter() {
             randr::set_crtc_gamma_checked(&self.conn,
@@ -176,7 +198,7 @@ impl RandrState {
     fn set_crtc_temperature(&self, setting: &transition::ColorSetting, crtc: &Crtc) {
         //println!("CRTC[{:?}]", crtc.id);
 
-        /* Borrow saved ramps from CRTC */
+        /* Copy saved ramps from CRTC */
         let mut r = crtc.saved_ramps.0.clone();
         let mut g = crtc.saved_ramps.1.clone();
         let mut b = crtc.saved_ramps.2.clone();

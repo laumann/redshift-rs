@@ -1,11 +1,25 @@
 use solar;
 
 /* Periods of day */
+#[derive(Debug, PartialEq)]
 pub enum Period {
     None,
     Day,
     Night,
-    Transition
+    Transition(f64)
+}
+
+impl Period {
+    pub fn print(&self) {
+        match *self {
+            Period::None | Period::Day | Period::Night => {
+                println!("Period: {:?}", *self);
+            }
+            Period::Transition(t) => {
+                println!("Period: {} ({:.*}% day)", "Transition", 2, t * 100.0);
+            }
+        }
+    }
 }
 
 /**
@@ -29,11 +43,21 @@ impl ColorSetting {
     }
 }
 
+/** 
+ * Transition scheme.
+ * The solar elevations at which the transition begins/ends and
+ * associated color settings.
+ */
 pub struct TransitionScheme {
     pub high: f64,
     pub low: f64,
     pub day: ColorSetting,
-    pub night: ColorSetting
+    pub night: ColorSetting,
+
+    /* Used for initial and final gradual transition from/to 6500K */
+    pub short_trans_delta: i16,
+    pub short_trans_len: u16,
+    pub adjustment_alpha: f64
 }
 
 impl TransitionScheme {
@@ -42,7 +66,11 @@ impl TransitionScheme {
             high:  3.0,
             low:   solar::CIVIL_TWILIGHT_ELEV,
             day:   ColorSetting::new(),
-            night: ColorSetting::new()
+            night: ColorSetting::new(),
+
+            short_trans_delta: -1,
+            short_trans_len: 10,
+            adjustment_alpha: 1.0
         }
     }
 
@@ -65,5 +93,44 @@ impl TransitionScheme {
                 (1.0-alpha) * night.gamma[2] + alpha*day.gamma[2]
             ]
         }
+    }
+
+    /* Determine how far through a transition progress we are. */
+    pub fn transition_progress(&self, elevation: f64) -> f64 {
+        if elevation < self.low {
+            0.0
+        } else if elevation > self.high {
+            1.0
+        } else {
+            (self.low - elevation) / (self.low - self.high)
+        }
+    }
+
+    pub fn get_period(&self, elevation: f64) -> Period {
+        if elevation < self.low {
+            Period::Night
+        } else if elevation > self.high {
+            Period::Day
+        } else {
+            let t = (self.low - elevation) / (self.low - self.high);
+            Period::Transition(t)
+        }
+    }
+
+    pub fn short_transition(&self) -> bool {
+        self.short_trans_delta != 0
+    }
+
+    pub fn adjust_transition_alpha(&mut self) {
+        self.adjustment_alpha += self.short_trans_delta as f64 * 0.1 / self.short_trans_len as f64;
+
+        /* Stop transition when done */
+        if self.adjustment_alpha <= 0.0 || self.adjustment_alpha >= 1.1 {
+            self.short_trans_delta = 0;
+        }
+        
+        /* Clamp alpha value */
+        self.adjustment_alpha = self.adjustment_alpha.max(0.0).min(1.0);
+        println!("delta={}, alpha={}", self.short_trans_delta, self.adjustment_alpha);
     }
 }
