@@ -17,21 +17,28 @@ pub fn colorramp_fill(gamma_r: &mut [u16],
                                          &BLACKBODY_COLOR[temp_index..temp_index+3],
                                          &BLACKBODY_COLOR[temp_index+3..temp_index+6]);
 
-    let f = |y: f64, c: usize| -> f64 {
-        (y * setting.brightness * white_points[c]).powf(setting.gamma[c].recip())
+    let mut gammas = [gamma_r, gamma_g, gamma_b];
+
+    // Compute gamma, based on other gamma value
+    let u16_max1 = u16::max_value() as f64 + 1.0;
+    let compute_gamma = |g: u16, c: usize| {
+        let y = g as f64 / u16_max1;
+        let f = (y * setting.brightness * white_points[c]).powf(setting.gamma[c].recip());
+        (f * u16_max1) as u16
     };
         
     let u16m = u16::max_value() as f64 + 1.0;
     for i in 0..size {
-        gamma_r[i] = (f(gamma_r[i] as f64/u16m, 0) * u16m) as u16;
-        gamma_g[i] = (f(gamma_g[i] as f64/u16m, 1) * u16m) as u16;
-        gamma_b[i] = (f(gamma_b[i] as f64/u16m, 2) * u16m) as u16;
+        for g in 0..3 {
+            gammas[g][i] = compute_gamma(gammas[g][i], g);
+        }
+        // gamma_r[i] = compute_gamma(gamma_r[i], 0);
+        // gamma_g[i] = compute_gamma(gamma_g[i], 1);
+        // gamma_b[i] = compute_gamma(gamma_b[i], 2);
     }
 }
 
-
 fn interpolate_color<'a>(a: f64, c1: &'a[f64], c2: &'a[f64]) -> [f64; 3] {
-    //println!("|c1|={:?}, |c2|={:?}", c1.len(), c2.len());
     [(1.0-a)*c1[0] + a*c2[0],
      (1.0-a)*c1[1] + a*c2[1],
      (1.0-a)*c1[2] + a*c2[2]]

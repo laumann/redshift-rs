@@ -1,6 +1,9 @@
 #![allow(dead_code, unused_variables)]
 extern crate xcb;
 extern crate time;
+#[macro_use]
+extern crate chan;
+extern crate chan_signal;
 
 use std::thread;
 use xcb::randr;
@@ -78,6 +81,13 @@ impl TransitionScheme {
     }
 }
 
+enum Period {
+    None,
+    Day,
+    Night,
+    Transition
+}
+
 struct Crtc {
     id: u32,
     ramp_size: u32,
@@ -127,29 +137,56 @@ fn main() {
     }
 
     let loc = location::Location {
-        lat: 40.7, // 55.7
-        lon: -50.0 //12.6
+        lat: 55.7,
+        lon: 12.6
     };
+
+    // Create signal thread
+    let sigint = chan_signal::notify(&[chan_signal::Signal::INT,
+                                       chan_signal::Signal::TERM]);
+    let (signal_tx, signal_rx) = chan::sync(0);
+    std::thread::spawn(move || {
+        signal_tx.send(sigint.recv());
+    });
+
+    // Create timer thread
+    // The timer thread should be modifiable, to 
+    enum TimerMsg {
+        Sleep(u64),
+        Exit
+    }
+    let (timer_tx, timer_rx) = chan::sync(0);
+    let (sleep_tx, sleep_rx) = chan::sync(0);
+    std::thread::spawn(move || {
+        for msg in sleep_rx.iter() {
+            match msg {
+                TimerMsg::Sleep(ms) => {
+                    thread::sleep(std::time::Duration::from_millis(ms));
+                    timer_tx.send(());
+                }
+                TimerMsg::Exit => break
+            }
+        }
+    });
 
     let mut now;
     let mut prev_color_setting = ColorSetting::new();
     let mut prev_elev = 0.0;
     loop {
-        now = systemtime_get_time(); // - 524_000.0;
-        //println!("now={:?}", now);
-
-        // Compute elevation
-
-        // Interpolate color settings: ColorSetting
-
-        let elev = solar::elevation(now, &loc);
-        //println!("{:?}", (elev - prev_elev).abs());
-        if (elev - prev_elev).abs() > 0.01 {
-            prev_elev = elev;
-            println!("Current angular elevation of the sun: {:?}", elev);
+        now = systemtime_get_time();
+        chan_select! {
+            signal_rx.recv() -> signal => {
+                println!("Received signal: {:?}", signal);
+                break;
+            },
+            timer_rx.recv() => {}
         }
 
-        // Ongoing short transition?
+
+        // Compute elevation
+        let elev = solar::elevation(now, &loc);
+
+        /* Ongoing short transition? */
 
         // Interpolate between 6500K and calculated temperature
         let color_setting = scheme.interpolate_color_settings(elev);
@@ -159,11 +196,15 @@ fn main() {
         if color_setting.brightness != prev_color_setting.brightness {
             println!("Brightness: {:?}", color_setting.brightness);
         }
-        randr_state.set_temperature(&color_setting);
+
+        
+        // randr_state.set_temperature(&color_setting);
 
         // Sleep for 5 seconds or 0.1 second
-        thread::sleep(std::time::Duration::from_millis(100));
+        //thread::sleep(std::time::Duration::from_millis(100));
         //thread::sleep(std::time::Duration::from_secs(5));
+        sleep_tx.send(TimerMsg::Sleep(100));
+
 
         /* Save temperature */
         prev_color_setting = color_setting;
@@ -179,6 +220,17 @@ fn systemtime_get_time() -> f64 {
  *
  */
 impl RandrState {
+
+    fn restore(&self) {
+        for crtc in self.crtcs.iter() {
+            randr::set_crtc_gamma_checked(&self.conn,
+                                          crtc.id,
+                                          &crtc.saved_ramps.0[..],
+                                          &crtc.saved_ramps.1[..],
+                                          &crtc.saved_ramps.2[..]);
+        }
+    }
+
     fn set_temperature(&self, setting: &ColorSetting) {
         for crtc in self.crtcs.iter() {
             self.set_crtc_temperature(setting, crtc);
