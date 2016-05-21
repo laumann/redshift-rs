@@ -127,8 +127,8 @@ fn main() {
     }
 
     let loc = location::Location {
-        lat: 55.7,
-        lon: 12.6
+        lat: 40.7, // 55.7
+        lon: -50.0 //12.6
     };
 
     let mut now;
@@ -188,15 +188,21 @@ impl RandrState {
     fn set_crtc_temperature(&self, setting: &ColorSetting, crtc: &Crtc) {
         //println!("CRTC[{:?}]", crtc.id);
 
-        /* Create new gamma ramps */
-        let (red, green, blue) = colorramp::gen_colorramp(setting,
-                                                          crtc.ramp_size as usize);
+        /* Borrow saved ramps from CRTC */
+        let mut r = crtc.saved_ramps.0.clone();
+        let mut g = crtc.saved_ramps.1.clone();
+        let mut b = crtc.saved_ramps.2.clone();
 
-        // randr::set_crtc_gamma_checked(&self.conn,
-        //                               crtc.id,
-        //                               &red[..],
-        //                               &green[..],
-        //                               &blue[..]);
+        /* Create new gamma ramps */
+        colorramp::colorramp_fill(&mut r[..], &mut g[..], &mut b[..],
+                                  setting,
+                                  crtc.ramp_size as usize);
+        
+        randr::set_crtc_gamma_checked(&self.conn,
+                                      crtc.id,
+                                      &r[..],
+                                      &g[..],
+                                      &b[..]);
     }
 
     /**

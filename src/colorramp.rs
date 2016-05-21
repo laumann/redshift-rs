@@ -1,10 +1,14 @@
 
 
 /**
- * Generate color ramps from the given color setting and return 
+ * Generate color ramps from the given color setting and ramp size,
+ * and modify the given rgb gamma ramps.
  */
-pub fn gen_colorramp(setting: &super::ColorSetting, size: usize)
-    -> (Vec<u16>, Vec<u16>, Vec<u16>)
+pub fn colorramp_fill(gamma_r: &mut [u16],
+                      gamma_g: &mut [u16],
+                      gamma_b: &mut [u16],
+                      setting: &super::ColorSetting,
+                      size: usize)
 {
     let alpha = (setting.temp as f64 % 100.0) / 100.0;
     let temp_index = (((setting.temp - 1000)/100)*3) as usize;
@@ -13,27 +17,24 @@ pub fn gen_colorramp(setting: &super::ColorSetting, size: usize)
                                          &BLACKBODY_COLOR[temp_index..temp_index+3],
                                          &BLACKBODY_COLOR[temp_index+3..temp_index+6]);
 
-    let (mut gamma_r, mut gamma_g, mut gamma_b) = (Vec::with_capacity(size),
-                                                   Vec::with_capacity(size),
-                                                   Vec::with_capacity(size));
-    (gamma_r, gamma_g, gamma_b)
-    // let f = |y, c| {
-    //     y * setting.brightness * 
-    // };
+    let f = |y: f64, c: usize| -> f64 {
+        (y * setting.brightness * white_points[c]).powf(setting.gamma[c].recip())
+    };
         
-    // for i in 0..size {
-    //     gamma_r[i] = 
-    //     // gamma_g[i] = 0;
-    //     // gamma_b[i] = 0;
-    // }
+    let u16m = u16::max_value() as f64 + 1.0;
+    for i in 0..size {
+        gamma_r[i] = (f(gamma_r[i] as f64/u16m, 0) * u16m) as u16;
+        gamma_g[i] = (f(gamma_g[i] as f64/u16m, 1) * u16m) as u16;
+        gamma_b[i] = (f(gamma_b[i] as f64/u16m, 2) * u16m) as u16;
+    }
 }
 
 
-fn interpolate_color<'a>(a: f64, c1: &'a[f64], c2: &'a[f64]) -> (f64, f64, f64) {
+fn interpolate_color<'a>(a: f64, c1: &'a[f64], c2: &'a[f64]) -> [f64; 3] {
     //println!("|c1|={:?}, |c2|={:?}", c1.len(), c2.len());
-    ((1.0-a)*c1[0] + a*c2[0],
+    [(1.0-a)*c1[0] + a*c2[0],
      (1.0-a)*c1[1] + a*c2[1],
-     (1.0-a)*c1[2] + a*c2[2])
+     (1.0-a)*c1[2] + a*c2[2]]
 }
 
 /* Whitepoint values for temperatures at 100K intervals.
