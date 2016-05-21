@@ -8,6 +8,7 @@ extern crate chan_signal;
 use std::thread;
 use xcb::randr;
 
+mod transition;
 mod colorramp;
 mod location;
 mod solar;
@@ -22,71 +23,6 @@ const DEFAULT_DAY_TEMP:    i32 = 5500;
 const DEFAULT_NIGHT_TEMP:  i32 = 3500;
 const DEFAULT_BRIGHTNESS:  f64 = 1.0;
 const DEFAULT_GAMMA:       f64 = 1.0;
-
-/**
- * A color setting
- */
-pub struct ColorSetting {
-    temp: i32,
-    gamma: [f64; 3],
-    brightness: f64,
-}
-
-impl ColorSetting {
-    fn new() -> ColorSetting {
-        ColorSetting {
-            temp: -1,
-            gamma: [std::f64::NAN, std::f64::NAN, std::f64::NAN],
-            brightness: std::f64::NAN
-        }
-    }
-}
-
-struct TransitionScheme {
-    high: f64,
-    low: f64,
-    day: ColorSetting,
-    night: ColorSetting
-}
-
-impl TransitionScheme {
-    fn new() -> TransitionScheme {
-        TransitionScheme {
-            high:  3.0,
-            low:   solar::CIVIL_TWILIGHT_ELEV,
-            day:   ColorSetting::new(),
-            night: ColorSetting::new()
-        }
-    }
-
-    /**
-     * Given an elevation, compute a color setting from this scheme's settings
-     */
-    fn interpolate_color_settings(&self, elevation: f64) -> ColorSetting {
-        let day = &self.day;
-        let night = &self.night;
-
-        let al = (self.low - elevation) / (self.low - self.high);
-        let alpha = al.min(1.0).max(0.0); // clamp to [0.0, 1.0]
-
-        ColorSetting {
-            temp: ((1.0-alpha) * night.temp as f64 + alpha * day.temp as f64) as i32,
-            brightness: (1.0-alpha) * night.brightness + alpha * day.brightness,
-            gamma: [
-                (1.0-alpha) * night.gamma[0] + alpha*day.gamma[0],
-                (1.0-alpha) * night.gamma[1] + alpha*day.gamma[1],
-                (1.0-alpha) * night.gamma[2] + alpha*day.gamma[2]
-            ]
-        }
-    }
-}
-
-enum Period {
-    None,
-    Day,
-    Night,
-    Transition
-}
 
 struct Crtc {
     id: u32,
@@ -119,7 +55,7 @@ fn main() {
     // verbose: bool
 
     /* Init transition scheme - all defaults for now */
-    let mut scheme = TransitionScheme::new();
+    let mut scheme = transition::TransitionScheme::new();
     scheme.day.temp = DEFAULT_DAY_TEMP;
     scheme.night.temp = DEFAULT_NIGHT_TEMP;
     if scheme.day.brightness.is_nan() {
@@ -170,7 +106,7 @@ fn main() {
     });
 
     let mut now;
-    let mut prev_color_setting = ColorSetting::new();
+    let mut prev_color_setting = transition::ColorSetting::new();
     let mut prev_elev = 0.0;
     loop {
         now = systemtime_get_time();
@@ -231,13 +167,13 @@ impl RandrState {
         }
     }
 
-    fn set_temperature(&self, setting: &ColorSetting) {
+    fn set_temperature(&self, setting: &transition::ColorSetting) {
         for crtc in self.crtcs.iter() {
             self.set_crtc_temperature(setting, crtc);
         }
     }
 
-    fn set_crtc_temperature(&self, setting: &ColorSetting, crtc: &Crtc) {
+    fn set_crtc_temperature(&self, setting: &transition::ColorSetting, crtc: &Crtc) {
         //println!("CRTC[{:?}]", crtc.id);
 
         /* Borrow saved ramps from CRTC */
