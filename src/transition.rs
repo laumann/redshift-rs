@@ -43,7 +43,7 @@ impl ColorSetting {
     }
 }
 
-/** 
+/**
  * Transition scheme.
  * The solar elevations at which the transition begins/ends and
  * associated color settings.
@@ -125,12 +125,11 @@ impl TransitionScheme {
         self.adjustment_alpha += self.short_trans_delta as f64 * 0.1 / self.short_trans_len as f64;
 
         /* Stop transition when done */
-        if self.adjustment_alpha <= 0.0 || self.adjustment_alpha >= 1.1 {
+        if self.adjustment_alpha <= 0.0 || self.adjustment_alpha >= 1.0 {
             self.short_trans_delta = 0;
         }
-        
+
         /* Clamp alpha value */
         self.adjustment_alpha = self.adjustment_alpha.max(0.0).min(1.0);
-        println!("delta={}, alpha={}", self.short_trans_delta, self.adjustment_alpha);
     }
 }

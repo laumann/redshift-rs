@@ -68,14 +68,13 @@ fn main() {
 
     /* Init location */
     let loc = location::Location {
-        lat: 20.0, //55.7,
-        lon: 70.0, //12.6
+        lat: 55.7,
+        lon: 12.6
     };
 
     // Create signal thread
     let sigint = chan_signal::notify(&[chan_signal::Signal::INT,
-                                       chan_signal::Signal::TERM,
-                                       chan_signal::Signal::USR1]);
+                                       chan_signal::Signal::TERM]);
     let (signal_tx, signal_rx) = chan::sync(0);
     std::thread::spawn(move || {
         for sig in sigint.iter() {
@@ -84,7 +83,7 @@ fn main() {
     });
 
     // Create timer thread
-    // The timer thread should be modifiable, to 
+    // The timer thread should be modifiable, to
     enum TimerMsg {
         Sleep(u64),
         Exit
@@ -112,54 +111,54 @@ fn main() {
         now = systemtime_get_time();
         chan_select! {
             signal_rx.recv() -> signal => {
-                //println!("Received signal: {:?}", signal);
+                println!("Received signal: {:?}", signal);
                 exiting = true;
                 scheme.short_trans_delta = 1;
                 scheme.adjustment_alpha = 0.1;
             },
-            timer_rx.recv() => {}
+            timer_rx.recv() => {
+
+                // Compute elevation
+                let elev = solar::elevation(now, &loc);
+
+                let period = scheme.get_period(elev);
+                if period != prev_period {
+                    period.print();
+                    prev_period = period;
+                }
+
+                // Interpolate between 6500K and calculated temperature
+                let mut color_setting = scheme.interpolate_color_settings(elev);
+
+                /* Ongoing short transition? */
+                if scheme.short_transition() {
+                    scheme.adjust_transition_alpha();
+                    color_setting.temp = (scheme.adjustment_alpha * 6500.0 +
+                                          (1.0-scheme.adjustment_alpha) * color_setting.temp as f64) as i32;
+                    color_setting.brightness = scheme.adjustment_alpha * 1.0 +
+                        (1.0-scheme.adjustment_alpha) * color_setting.brightness;
+                }
+
+                if color_setting.temp != prev_color_setting.temp {
+                    println!("Color temperature: {:?}K", color_setting.temp);
+                }
+                if color_setting.brightness != prev_color_setting.brightness {
+                    println!("Brightness: {:?}", color_setting.brightness);
+                }
+
+                randr_state.set_temperature(&color_setting);
+
+                if exiting && !scheme.short_transition() {
+                    break;
+                }
+
+                // Sleep for 5 seconds or 0.1 second
+                sleep_tx.send(TimerMsg::Sleep(if scheme.short_transition() { 100 } else { 5000 }));
+
+                /* Save temperature */
+                prev_color_setting = color_setting;
+            }
         }
-
-        // Compute elevation
-        let elev = solar::elevation(now, &loc);
-
-        let period = scheme.get_period(elev);
-        if period != prev_period {
-            period.print();
-            prev_period = period;
-        }
-
-        // Interpolate between 6500K and calculated temperature
-        let mut color_setting = scheme.interpolate_color_settings(elev);
-
-        /* Ongoing short transition? */
-        if scheme.short_transition() {
-            scheme.adjust_transition_alpha();
-            color_setting.temp = (scheme.adjustment_alpha * 6500.0 +
-                                  (1.0-scheme.adjustment_alpha) * color_setting.temp as f64) as i32;
-            color_setting.brightness = scheme.adjustment_alpha * 1.0 +
-                (1.0-scheme.adjustment_alpha) * color_setting.brightness;
-        }
-        
-        if color_setting.temp != prev_color_setting.temp {
-            println!("Color temperature: {:?}K", color_setting.temp);
-        }
-        if color_setting.brightness != prev_color_setting.brightness {
-            println!("Brightness: {:?}", color_setting.brightness);
-        }
-
-        randr_state.set_temperature(&color_setting);
-
-        if exiting && !scheme.short_transition() {
-            println!("Exiting.");
-            break;
-        }
-
-        // Sleep for 5 seconds or 0.1 second
-        sleep_tx.send(TimerMsg::Sleep(if scheme.short_transition() { 100 } else { 5000 }));
-
-        /* Save temperature */
-        prev_color_setting = color_setting;
     }
     sleep_tx.send(TimerMsg::Exit);
 
@@ -207,7 +206,7 @@ impl RandrState {
         colorramp::colorramp_fill(&mut r[..], &mut g[..], &mut b[..],
                                   setting,
                                   crtc.ramp_size as usize);
-        
+
         randr::set_crtc_gamma_checked(&self.conn,
                                       crtc.id,
                                       &r[..],
