@@ -108,15 +108,18 @@ fn main() {
     let mut prev_period = transition::Period::None;
     sleep_tx.send(TimerMsg::Sleep(0));
     loop {
-        now = systemtime_get_time();
         chan_select! {
             signal_rx.recv() -> signal => {
-                println!("Received signal: {:?}", signal);
+                if exiting {
+                    // If already exiting, just exit immediately
+                    break
+                }
                 exiting = true;
                 scheme.short_trans_delta = 1;
                 scheme.adjustment_alpha = 0.1;
             },
             timer_rx.recv() => {
+                now = systemtime_get_time();
 
                 // Compute elevation
                 let elev = solar::elevation(now, &loc);
@@ -160,6 +163,11 @@ fn main() {
             }
         }
     }
+
+    chan_select! {
+        default => {},
+        timer_rx.recv() => {}
+    }
     sleep_tx.send(TimerMsg::Exit);
 
     randr_state.restore();
@@ -195,8 +203,6 @@ impl RandrState {
     }
 
     fn set_crtc_temperature(&self, setting: &transition::ColorSetting, crtc: &Crtc) {
-        //println!("CRTC[{:?}]", crtc.id);
-
         /* Copy saved ramps from CRTC */
         let mut r = crtc.saved_ramps.0.clone();
         let mut g = crtc.saved_ramps.1.clone();
@@ -207,6 +213,8 @@ impl RandrState {
                                   setting,
                                   crtc.ramp_size as usize);
 
+        // TODO Use a scratch-pad, and only call
+        // set_crtc_gamma_checked() when ramp values change
         randr::set_crtc_gamma_checked(&self.conn,
                                       crtc.id,
                                       &r[..],
@@ -215,7 +223,7 @@ impl RandrState {
     }
 
     /**
-     *
+     * Find initial information on all the CRTCs
      */
     fn start(&mut self) {
         let setup = self.conn.get_setup();
@@ -224,7 +232,7 @@ impl RandrState {
         /* Get list of CRTCs for the screen */
         let screen_resources = randr::get_screen_resources(&self.conn,
                                                            self.window_dummy).get_reply().unwrap();
-        println!("Num CRTCs: {}", screen_resources.num_crtcs());
+        //println!("Num CRTCs: {}", screen_resources.num_crtcs());
         let num_crtcs = screen_resources.num_crtcs();
 
         self.crtcs = Vec::with_capacity(screen_resources.num_crtcs() as usize);

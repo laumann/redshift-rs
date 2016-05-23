@@ -12,7 +12,7 @@ pub fn colorramp_fill(gamma_r: &mut [u16],
 {
     let alpha = (setting.temp as f64 % 100.0) / 100.0;
     let temp_index = (((setting.temp - 1000)/100)*3) as usize;
-    
+
     let white_points = interpolate_color(alpha,
                                          &BLACKBODY_COLOR[temp_index..temp_index+3],
                                          &BLACKBODY_COLOR[temp_index+3..temp_index+6]);
@@ -26,15 +26,12 @@ pub fn colorramp_fill(gamma_r: &mut [u16],
         let f = (y * setting.brightness * white_points[c]).powf(setting.gamma[c].recip());
         (f * u16_max1) as u16
     };
-        
+
     let u16m = u16::max_value() as f64 + 1.0;
     for i in 0..size {
         for g in 0..3 {
             gammas[g][i] = compute_gamma(gammas[g][i], g);
         }
-        // gamma_r[i] = compute_gamma(gamma_r[i], 0);
-        // gamma_g[i] = compute_gamma(gamma_g[i], 1);
-        // gamma_b[i] = compute_gamma(gamma_b[i], 2);
     }
 }
 
