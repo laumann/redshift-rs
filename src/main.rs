@@ -1,4 +1,3 @@
-//#![allow(dead_code, unused_variables)]
 extern crate xcb;
 extern crate time;
 #[macro_use]
@@ -6,18 +5,19 @@ extern crate chan;
 extern crate chan_signal;
 
 use std::thread;
-use xcb::randr;
+use gamma_method::GammaMethodProvider;
 
 mod transition;
 mod colorramp;
 mod location;
 mod solar;
+mod gamma_method;
+mod gamma_randr;
+
 
 /**
  * Constants
  */
-const RANDR_MAJOR_VERSION: u32 = 1;
-const RANDR_MINOR_VERSION: u32 = 3;
 const NEUTRAL_TEMP:        i32 = 6500;
 const DEFAULT_DAY_TEMP:    i32 = 5500;
 const DEFAULT_NIGHT_TEMP:  i32 = 3500;
@@ -50,29 +50,25 @@ Options:
   -t DAY:NIGHT   Set day/night color temperatures
 ";
 
-struct Crtc {
-    id: u32,
-    ramp_size: u32,
-    saved_ramps: (Vec<u16>, Vec<u16>, Vec<u16>)
-}
+// static gamma_methods: &'static [Box<GammaMethodProvider>] = &[
+//     #[cfg(unix)]
+//     Box::new(gamma_randr::RandrMethod) as Box<GammaMethodProvider>,
 
-/**
- * Wrapping struct for RandR state
- */
-struct RandrState {
-    conn: xcb::Connection,
-    screen_num: i32,
-    window_dummy: u32,
-    crtcs: Vec<Crtc>
-}
+//     #[cfg(unix)]
+//     Box::new(gamma_method::DummyMethod) as Box<GammaMethodProvider>
+// ];
 
 fn main() {
-    let mut randr_state = RandrState::init();
+    let mut gamma_state = gamma_randr::RandrMethod.init();
+    //let mut gamma_state = gamma_method::DummyMethod.init();
 
-    randr_state.query_version();
-    randr_state.start();
+    //gamma_state.query_version();
+    gamma_state.start();
 
     /* Run continual mode */
+    if cfg!(target_os = "unix") {
+        println!("Un*x!");
+    }
 
     /* Init transition scheme - all defaults for now */
     let mut scheme = transition::TransitionScheme::new();
@@ -138,6 +134,7 @@ fn main() {
                 }
                 exiting = true;
                 scheme.short_trans_delta = 1;
+                scheme.short_trans_len = 2;
                 scheme.adjustment_alpha = 0.1;
             },
             timer_rx.recv() => {
@@ -164,14 +161,15 @@ fn main() {
                         (1.0-scheme.adjustment_alpha) * color_setting.brightness;
                 }
 
-                if color_setting.temp != prev_color_setting.temp {
-                    println!("Color temperature: {:?}K", color_setting.temp);
+                if color_setting != prev_color_setting {
+                    if color_setting.temp != prev_color_setting.temp {
+                        println!("Color temperature: {:?}K", color_setting.temp);
+                    }
+                    if color_setting.brightness != prev_color_setting.brightness {
+                        println!("Brightness: {:?}", color_setting.brightness);
+                    }
+                    gamma_state.set_temperature(&color_setting);
                 }
-                if color_setting.brightness != prev_color_setting.brightness {
-                    println!("Brightness: {:?}", color_setting.brightness);
-                }
-
-                randr_state.set_temperature(&color_setting);
 
                 if exiting && !scheme.short_transition() {
                     break
@@ -192,7 +190,7 @@ fn main() {
     }
     sleep_tx.send(TimerMsg::Exit);
 
-    randr_state.restore();
+    gamma_state.restore();
 }
 
 fn systemtime_get_time() -> f64 {
@@ -200,103 +198,3 @@ fn systemtime_get_time() -> f64 {
     now.sec as f64 + (now.nsec as f64 / 1_000_000_000.0)
 }
 
-/**
- *
- */
-impl RandrState {
-
-    /**
-     * Restore saved gamma ramps
-     */
-    fn restore(&self) {
-        for crtc in self.crtcs.iter() {
-            randr::set_crtc_gamma_checked(&self.conn,
-                                          crtc.id,
-                                          &crtc.saved_ramps.0[..],
-                                          &crtc.saved_ramps.1[..],
-                                          &crtc.saved_ramps.2[..]);
-        }
-    }
-
-    fn set_temperature(&self, setting: &transition::ColorSetting) {
-        for crtc in self.crtcs.iter() {
-            self.set_crtc_temperature(setting, crtc);
-        }
-    }
-
-    fn set_crtc_temperature(&self, setting: &transition::ColorSetting, crtc: &Crtc) {
-        /* Copy saved ramps from CRTC */
-        let mut r = crtc.saved_ramps.0.clone();
-        let mut g = crtc.saved_ramps.1.clone();
-        let mut b = crtc.saved_ramps.2.clone();
-
-        /* Create new gamma ramps */
-        colorramp::colorramp_fill(&mut r[..], &mut g[..], &mut b[..],
-                                  setting,
-                                  crtc.ramp_size as usize);
-
-        // TODO Use a scratch-pad, and only call
-        // set_crtc_gamma_checked() when ramp values change
-        randr::set_crtc_gamma_checked(&self.conn,
-                                      crtc.id,
-                                      &r[..],
-                                      &g[..],
-                                      &b[..]);
-    }
-
-    /**
-     * Find initial information on all the CRTCs
-     */
-    fn start(&mut self) {
-        //let setup = self.conn.get_setup();
-
-        /* Get list of CRTCs for the screen */
-        let screen_resources = randr::get_screen_resources(&self.conn,
-                                                           self.window_dummy).get_reply().unwrap();
-        self.crtcs = Vec::with_capacity(screen_resources.num_crtcs() as usize);
-
-        /* Save size and gamma ramps of all CRTCs */
-        for crtc in screen_resources.crtcs() {
-            let gamma = randr::get_crtc_gamma(&self.conn, *crtc).get_reply().unwrap();
-            let red = gamma.red().to_vec();
-            let green = gamma.green().to_vec();
-            let blue = gamma.blue().to_vec();
-
-            self.crtcs.push(Crtc {
-                id: *crtc,
-                ramp_size: gamma.size() as u32,
-                saved_ramps: (red, green, blue)
-            });
-        }
-    }
-
-    fn init() -> RandrState {
-        let (conn, screen_num) = xcb::Connection::connect(None).unwrap();
-
-        let window_dummy = {
-            let setup = conn.get_setup();
-            let screen = setup.roots().nth(screen_num as usize).unwrap();
-            let window_dummy = conn.generate_id();
-
-            xcb::create_window(&conn, 0, window_dummy, screen.root(), 0, 0, 1,
-                               1, 0, 0, 0, &[]);
-            conn.flush();
-            window_dummy
-        };
-
-        RandrState {
-            conn: conn,
-            screen_num: screen_num,
-            window_dummy: window_dummy,
-            crtcs: vec![]
-        }
-    }
-
-    fn query_version(&self) {
-        let reply = randr::query_version(&self.conn,
-                                         RANDR_MAJOR_VERSION,
-                                         RANDR_MINOR_VERSION).get_reply().unwrap();
-        println!("RandR {}.{}", reply.major_version(),
-                 reply.minor_version());
-    }
-}

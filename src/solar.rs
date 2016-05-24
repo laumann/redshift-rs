@@ -4,7 +4,6 @@
  * Adapted from the Redshift source code (which in turn was adapted
  * from some JavaScript code)
  */
-use time;
 use location;
 
 /**
