@@ -48,7 +48,7 @@ Options:
   -x             Reset (remove adjustments to screen)
   -r             Disable temperature transitions
   -t DAY:NIGHT   Set day/night color temperatures
-"
+";
 
 struct Crtc {
     id: u32,
@@ -93,10 +93,7 @@ fn main() {
     }
 
     /* Init location */
-    let loc = location::Location {
-        lat: 55.7,
-        lon: 12.6
-    };
+    let loc = location::Location::new(55.7, 12.6);
 
     // Create signal thread
     let sigint = chan_signal::notify(&[chan_signal::Signal::INT,
