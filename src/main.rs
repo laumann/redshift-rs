@@ -62,14 +62,10 @@ fn main() {
     let mut gamma_state = gamma_randr::RandrMethod.init();
     //let mut gamma_state = gamma_method::DummyMethod.init();
 
-    //gamma_state.query_version();
-    gamma_state.start();
+     gamma_state.start();
 
     /* Run continual mode */
-    if cfg!(target_os = "unix") {
-        println!("Un*x!");
-    }
-
+ 
     /* Init transition scheme - all defaults for now */
     let mut scheme = transition::TransitionScheme::new();
     scheme.day.temp = DEFAULT_DAY_TEMP;
