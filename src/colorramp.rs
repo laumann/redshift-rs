@@ -27,7 +27,6 @@ pub fn colorramp_fill(gamma_r: &mut [u16],
         (f * u16_max1) as u16
     };
 
-    let u16m = u16::max_value() as f64 + 1.0;
     for i in 0..size {
         for g in 0..3 {
             gammas[g][i] = compute_gamma(gammas[g][i], g);

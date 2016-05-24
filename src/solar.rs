@@ -1,6 +1,6 @@
 /**
  * Compute solar zenith angle/solar elevation angle
- * 
+ *
  * Adapted from the Redshift source code (which in turn was adapted
  * from some JavaScript code)
  */
@@ -10,47 +10,48 @@ use location;
 /**
  * Model of atmospheric refraction near horizon (in degrees)
  */
-pub const SOLAR_ATM_REFRAC: f64 = 0.833;
+#[test] pub const SOLAR_ATM_REFRAC: f64 = 0.833;
 
 /**
  * Various elevation constants
  */
-pub const ASTRO_TWILIGHT_ELEV: f64 = -18.0;
-pub const NAUT_TWILIGHT_ELEV:  f64 = -12.0;
-pub const CIVIL_TWILIGHT_ELEV: f64 = -6.0;
-pub const DAYTIME_ELEV:        f64 = (0.0 - SOLAR_ATM_REFRAC);
+#[test] pub const ASTRO_TWILIGHT_ELEV: f64 = -18.0;
+#[test] pub const NAUT_TWILIGHT_ELEV:  f64 = -12.0;
+        pub const CIVIL_TWILIGHT_ELEV: f64 = -6.0;
+#[test] pub const DAYTIME_ELEV:        f64 = (0.0 - SOLAR_ATM_REFRAC);
 
 /**
  * Solar times - see the time_angle[] array
  */
-pub const NOON:       usize = 0;
-pub const MIDNIGHT:   usize = 1;
-pub const ASTRO_DAWN: usize = 2;
-pub const NAUT_DAWN:  usize = 3;
-pub const CIVIL_DAWN: usize = 4;
-pub const SUNRISE:    usize = 5;
-pub const SUNSET:     usize = 6;
-pub const CIVIL_DUSK: usize = 7;
-pub const NAUT_DUSK:  usize = 8;
-pub const ASTRO_DUSK: usize = 9;
+
+#[test] pub const NOON:       usize = 0;
+#[test] pub const MIDNIGHT:   usize = 1;
+#[test] pub const ASTRO_DAWN: usize = 2;
+#[test] pub const NAUT_DAWN:  usize = 3;
+#[test] pub const CIVIL_DAWN: usize = 4;
+#[test] pub const SUNRISE:    usize = 5;
+#[test] pub const SUNSET:     usize = 6;
+#[test] pub const CIVIL_DUSK: usize = 7;
+#[test] pub const NAUT_DUSK:  usize = 8;
+#[test] pub const ASTRO_DUSK: usize = 9;
 
 /**
  * Computed angles (or angels), these can be re-computed using the
  * time_angles() test function (see below)
  */
-pub const time_angle: [f64; 10] = [
-    0.0,                 // NOON (not used)
-    ::std::f64::NAN,     // MIDNIGHT (not used)
+// pub const time_angle: [f64; 10] = [
+//     0.0,                 // NOON (not used)
+//     ::std::f64::NAN,     // MIDNIGHT (not used)
 
-    -1.8849555921538759, // ASTRO_DAWN
-    -1.7802358370342162, // NAUT_DAWN
-    -1.6755160819145565, // CIVIL_DAWN
-    -1.5853349194640094, // SUNRISE
-    1.5853349194640094,  // SUNSET
-    1.6755160819145565,  // CIVIL_DUSK
-    1.7802358370342162,  // NAUT_DUSK
-    1.8849555921538759,  // ASTRO_DUSK
-];
+//     -1.8849555921538759, // ASTRO_DAWN
+//     -1.7802358370342162, // NAUT_DAWN
+//     -1.6755160819145565, // CIVIL_DAWN
+//     -1.5853349194640094, // SUNRISE
+//     1.5853349194640094,  // SUNSET
+//     1.6755160819145565,  // CIVIL_DUSK
+//     1.7802358370342162,  // NAUT_DUSK
+//     1.8849555921538759,  // ASTRO_DUSK
+// ];
 
 /* A Julian Day */
 pub type JulianDay = f64;
@@ -60,7 +61,7 @@ pub trait JulianDays {
     fn to_epoch(self) -> f64;
 }
 impl JulianDays for JulianDay {
-    fn from_epoch(t: f64) -> JulianDay { 
+    fn from_epoch(t: f64) -> JulianDay {
         ((t / 86400.0) + 2440587.5) as JulianDay
     }
 
@@ -146,7 +147,7 @@ impl JulianCents for JulianCent {
         let e = self.earth_orbit_eccentricity();
         let m = self.sun_geom_mean_anomaly();
         let y = (self.obliquity_corr()/2.0).tan().powf(2.0);
-        
+
         let eq_time = y * (2.0 * l0).sin()
             - 2.0 * e * m.sin()
             + 4.0 * e * y * m.sin() * (2.0* l0).cos()
@@ -156,16 +157,16 @@ impl JulianCents for JulianCent {
     }
 }
 
-#[inline]
-fn copysign(x: f64, y: f64) -> f64 {
-    if y.is_sign_positive() ^ x.is_sign_positive() { -x } else { x }
-}
+// #[inline]
+// fn copysign(x: f64, y: f64) -> f64 {
+//     if y.is_sign_positive() ^ x.is_sign_positive() { -x } else { x }
+// }
 
-pub fn hour_angle_from_elevation(lat: f64, decl: f64, elev: f64) -> f64 {
-    let omega = (elev.abs().cos() - lat.to_radians().sin() * decl.sin()).acos()
-        / (lat.to_radians().cos() * decl.cos());
-    copysign(omega, -elev)
-}
+// pub fn hour_angle_from_elevation(lat: f64, decl: f64, elev: f64) -> f64 {
+//     let omega = (elev.abs().cos() - lat.to_radians().sin() * decl.sin()).acos()
+//         / (lat.to_radians().cos() * decl.cos());
+//     copysign(omega, -elev)
+// }
 
 pub fn elevation_from_hour_angle(lat: f64, decl: f64, ha: f64) -> f64 {
     (ha.cos() * lat.to_radians().cos() * decl.cos()

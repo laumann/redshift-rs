@@ -1,4 +1,4 @@
-#![allow(dead_code, unused_variables)]
+//#![allow(dead_code, unused_variables)]
 extern crate xcb;
 extern crate time;
 #[macro_use]
@@ -23,6 +23,32 @@ const DEFAULT_DAY_TEMP:    i32 = 5500;
 const DEFAULT_NIGHT_TEMP:  i32 = 3500;
 const DEFAULT_BRIGHTNESS:  f64 = 1.0;
 const DEFAULT_GAMMA:       f64 = 1.0;
+
+// TODO Use docopt?
+const USAGE: &'static str = "
+redshift-rs: A Rust clone of RedShift
+
+Usage:
+  redshift-rs [options]
+  redshift-rs (-h | --help)
+  redshift-rs --version
+
+Options:
+  -h, --help     Display this help message
+  -V, --version  Print version and exit
+  -v, --verbose  Verbose output
+
+  -b DAY:NIGHT   Screen brightness to apply (between 0.1 and 1.0)
+  -l LAT:LON     Use this location (latitude and longitude)
+  -m METHOD      Method to use to set color temperature
+                 (use 'list' to see available providers)
+  -o             One shot mode
+  -O TEMP        One shot manual mode (set color temperature)
+  -p             Print parameters and exit
+  -x             Reset (remove adjustments to screen)
+  -r             Disable temperature transitions
+  -t DAY:NIGHT   Set day/night color temperatures
+"
 
 struct Crtc {
     id: u32,
@@ -109,10 +135,9 @@ fn main() {
     sleep_tx.send(TimerMsg::Sleep(0));
     loop {
         chan_select! {
-            signal_rx.recv() -> signal => {
+            signal_rx.recv() -> _signal => {
                 if exiting {
-                    // If already exiting, just exit immediately
-                    break
+                    break // If already exiting, just exit immediately
                 }
                 exiting = true;
                 scheme.short_trans_delta = 1;
@@ -136,7 +161,7 @@ fn main() {
                 /* Ongoing short transition? */
                 if scheme.short_transition() {
                     scheme.adjust_transition_alpha();
-                    color_setting.temp = (scheme.adjustment_alpha * 6500.0 +
+                    color_setting.temp = (scheme.adjustment_alpha * NEUTRAL_TEMP as f64 +
                                           (1.0-scheme.adjustment_alpha) * color_setting.temp as f64) as i32;
                     color_setting.brightness = scheme.adjustment_alpha * 1.0 +
                         (1.0-scheme.adjustment_alpha) * color_setting.brightness;
@@ -152,7 +177,7 @@ fn main() {
                 randr_state.set_temperature(&color_setting);
 
                 if exiting && !scheme.short_transition() {
-                    break;
+                    break
                 }
 
                 // Sleep for 5 seconds or 0.1 second
@@ -226,15 +251,11 @@ impl RandrState {
      * Find initial information on all the CRTCs
      */
     fn start(&mut self) {
-        let setup = self.conn.get_setup();
-        let screen = setup.roots().nth(self.screen_num as usize).unwrap();
+        //let setup = self.conn.get_setup();
 
         /* Get list of CRTCs for the screen */
         let screen_resources = randr::get_screen_resources(&self.conn,
                                                            self.window_dummy).get_reply().unwrap();
-        //println!("Num CRTCs: {}", screen_resources.num_crtcs());
-        let num_crtcs = screen_resources.num_crtcs();
-
         self.crtcs = Vec::with_capacity(screen_resources.num_crtcs() as usize);
 
         /* Save size and gamma ramps of all CRTCs */
