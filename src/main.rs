@@ -65,7 +65,7 @@ fn main() {
      gamma_state.start();
 
     /* Run continual mode */
- 
+
     /* Init transition scheme - all defaults for now */
     let mut scheme = transition::TransitionScheme::new();
     scheme.day.temp = DEFAULT_DAY_TEMP;
@@ -157,15 +157,13 @@ fn main() {
                         (1.0-scheme.adjustment_alpha) * color_setting.brightness;
                 }
 
-                if color_setting != prev_color_setting {
-                    if color_setting.temp != prev_color_setting.temp {
-                        println!("Color temperature: {:?}K", color_setting.temp);
-                    }
-                    if color_setting.brightness != prev_color_setting.brightness {
-                        println!("Brightness: {:?}", color_setting.brightness);
-                    }
-                    gamma_state.set_temperature(&color_setting);
+                if color_setting.temp != prev_color_setting.temp {
+                    println!("Color temperature: {:?}K", color_setting.temp);
                 }
+                if color_setting.brightness != prev_color_setting.brightness {
+                    println!("Brightness: {:?}", color_setting.brightness);
+                }
+                gamma_state.set_temperature(&color_setting);
 
                 if exiting && !scheme.short_transition() {
                     break
@@ -193,4 +191,3 @@ fn systemtime_get_time() -> f64 {
     let now = time::get_time();
     now.sec as f64 + (now.nsec as f64 / 1_000_000_000.0)
 }
-
