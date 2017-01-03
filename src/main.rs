@@ -50,19 +50,11 @@ Options:
   -t DAY:NIGHT   Set day/night color temperatures
 ";
 
-// static gamma_methods: &'static [Box<GammaMethodProvider>] = &[
-//     #[cfg(unix)]
-//     Box::new(gamma_randr::RandrMethod) as Box<GammaMethodProvider>,
-
-//     #[cfg(unix)]
-//     Box::new(gamma_method::DummyMethod) as Box<GammaMethodProvider>
-// ];
-
 fn main() {
     let mut gamma_state = gamma_randr::RandrMethod.init();
-    //let mut gamma_state = gamma_method::DummyMethod.init();
+    let verbose = false;
 
-     gamma_state.start();
+    gamma_state.start();
 
     /* Run continual mode */
 
@@ -157,11 +149,13 @@ fn main() {
                         (1.0-scheme.adjustment_alpha) * color_setting.brightness;
                 }
 
-                if color_setting.temp != prev_color_setting.temp {
-                    println!("Color temperature: {:?}K", color_setting.temp);
-                }
-                if color_setting.brightness != prev_color_setting.brightness {
-                    println!("Brightness: {:?}", color_setting.brightness);
+                if verbose {
+                    if color_setting.temp != prev_color_setting.temp {
+                        println!("Color temperature: {:?}K", color_setting.temp);
+                    }
+                    if color_setting.brightness != prev_color_setting.brightness {
+                        println!("Brightness: {:?}", color_setting.brightness);
+                    }
                 }
                 gamma_state.set_temperature(&color_setting);
 
