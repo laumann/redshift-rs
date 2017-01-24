@@ -58,13 +58,44 @@ Options:
   -t <DAY:NIGHT>   Set day/night color temperatures
 ";
 
+// Error codes returned
+#[derive(Debug)]
+pub enum RedshiftError {
+    MalformedArgument,
+    Version,
+}
+
+impl RedshiftError {
+
+    /// Return whether this was a fatal error or not
+    fn fatal(&self) -> bool {
+        use RedshiftError::*;
+        match *self {
+            MalformedArgument => true,
+            Version => false
+        }
+    }
+
+    /// Exit with an error code.
+    /// The error code may not be fatal, in which case no error is printed.
+    fn exit(&self) -> ! {
+        let code = if self.fatal() {
+            println!("{:?}", *self);
+            1
+        } else {
+            0
+        };
+        ::std::process::exit(code);
+    }
+}
+
 #[derive(RustcDecodable)]
 struct Args {
     flag_version: bool,
     flag_verbose: bool,
 
     arg_b: Option<String>,
-    arg_l: Option<String>,
+    flag_l: Option<String>,
     arg_m: Option<String>,
     arg_o: Option<String>,
     arg_O: Option<String>,
@@ -83,19 +114,30 @@ fn main() {
 
     if args.flag_version {
         println!("redshift-rs {}", VERSION);
-        return;
+        RedshiftError::Version.exit();
+    }
+
+    // Init location
+    let loc = match args.flag_l {
+        Some(ref input) => input.parse::<location::Location>()
+            .unwrap_or_else(|e| e.exit()),
+        None => location::Location::new(55.7, 12.6)
+    };
+    if args.flag_verbose {
+        loc.print();
     }
 
     let mut gamma_state = gamma_randr::RandrMethod.init();
-
     gamma_state.start();
 
     /* Run continual mode */
 
     /* Init transition scheme - all defaults for now */
     let mut scheme = transition::TransitionScheme::new();
+
     scheme.day.temp = DEFAULT_DAY_TEMP;
     scheme.night.temp = DEFAULT_NIGHT_TEMP;
+
     if scheme.day.brightness.is_nan() {
         scheme.day.brightness = DEFAULT_BRIGHTNESS;
     }
@@ -110,8 +152,7 @@ fn main() {
         for g in scheme.night.gamma.iter_mut() { *g = DEFAULT_GAMMA }
     }
 
-    /* Init location */
-    let loc = location::Location::new(55.7, 12.6);
+
 
     // Create signal thread
     let sigint = chan_signal::notify(&[chan_signal::Signal::INT,
