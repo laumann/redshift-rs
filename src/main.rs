@@ -63,6 +63,7 @@ Options:
 pub enum RedshiftError {
     MalformedArgument,
     Version,
+    PrintMode
 }
 
 impl RedshiftError {
@@ -72,7 +73,7 @@ impl RedshiftError {
         use RedshiftError::*;
         match *self {
             MalformedArgument => true,
-            Version => false
+            Version | PrintMode => false
         }
     }
 
@@ -93,17 +94,35 @@ impl RedshiftError {
 struct Args {
     flag_version: bool,
     flag_verbose: bool,
-
-    arg_b: Option<String>,
+    flag_b: Option<String>,
     flag_l: Option<String>,
     arg_m: Option<String>,
-    arg_o: Option<String>,
+    flag_o: bool,
     arg_O: Option<String>,
-
     flag_p: bool,
     flag_x: bool,
     flag_r: bool,
-    arg_t: Option<String>
+    flag_t: Option<String>
+}
+
+/// Parse the temperature argument
+///
+/// Expected as "DAY:NIGHT", where DAY and NIGHT are floating point
+/// numbers. Any other input produces an error
+fn parse_temperature(input: String) -> Result<(i32, i32), RedshiftError> {
+    let mut parts = input.split(':');
+    let day = parts.next()
+        .and_then(|l| l.parse().ok())
+        .ok_or(RedshiftError::MalformedArgument)?;
+
+    let night = parts.next()
+        .and_then(|l| l.parse().ok())
+        .ok_or(RedshiftError::MalformedArgument)?;
+
+    match parts.next() {
+        Some(..) => Err(RedshiftError::MalformedArgument),
+        None => Ok((day, night))
+    }
 }
 
 fn main() {
@@ -117,26 +136,27 @@ fn main() {
         RedshiftError::Version.exit();
     }
 
+    let verbose = args.flag_verbose || args.flag_p;
+
     // Init location
     let loc = match args.flag_l {
         Some(ref input) => input.parse::<location::Location>()
             .unwrap_or_else(|e| e.exit()),
         None => location::Location::new(55.7, 12.6)
     };
-    if args.flag_verbose {
-        loc.print();
-    }
 
-    let mut gamma_state = gamma_randr::RandrMethod.init();
-    gamma_state.start();
+    let (temp_day, temp_night) = args.flag_t
+        .map_or((DEFAULT_DAY_TEMP, DEFAULT_NIGHT_TEMP),
+                |input| parse_temperature(input).unwrap_or_else(|e| e.exit()));
 
-    /* Run continual mode */
 
-    /* Init transition scheme - all defaults for now */
+    /* Init transition scheme */
     let mut scheme = transition::TransitionScheme::new();
-
-    scheme.day.temp = DEFAULT_DAY_TEMP;
-    scheme.night.temp = DEFAULT_NIGHT_TEMP;
+    scheme.day.temp = temp_day;
+    scheme.night.temp = temp_night;
+    if verbose {
+        println!("Temperatures: {}K at day, {}K at night", temp_day, temp_night);
+    }
 
     if scheme.day.brightness.is_nan() {
         scheme.day.brightness = DEFAULT_BRIGHTNESS;
@@ -152,6 +172,26 @@ fn main() {
         for g in scheme.night.gamma.iter_mut() { *g = DEFAULT_GAMMA }
     }
 
+
+    if verbose {
+        loc.print();
+    }
+
+
+    if args.flag_p {
+        let elev = solar::elevation(systemtime_get_time(), &loc);
+        let color_setting = scheme.interpolate_color_settings(elev);
+        println!("Color temperature: {:?}K", color_setting.temp);
+        println!("Brightness: {:?}", color_setting.brightness);
+        RedshiftError::PrintMode.exit();
+    }
+
+    let mut gamma_state = gamma_randr::RandrMethod.init();
+    gamma_state.start();
+
+
+
+    /* Run continual mode */
 
 
     // Create signal thread
@@ -208,7 +248,7 @@ fn main() {
 
                 let period = scheme.get_period(elev);
                 if period != prev_period {
-                    if args.flag_verbose {
+                    if verbose {
                         period.print();
                     }
                     prev_period = period;
@@ -226,7 +266,7 @@ fn main() {
                         (1.0-scheme.adjustment_alpha) * color_setting.brightness;
                 }
 
-                if args.flag_verbose {
+                if verbose {
                     if color_setting.temp != prev_color_setting.temp {
                         println!("Color temperature: {:?}K", color_setting.temp);
                     }
