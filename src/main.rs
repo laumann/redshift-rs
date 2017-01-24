@@ -1,11 +1,21 @@
+//!
+//! # Redshift in Rust
+//!
+//! aka redshift-rs
+//! aka rustshift
+//!
 extern crate xcb;
 extern crate time;
 #[macro_use]
 extern crate chan;
 extern crate chan_signal;
 
+extern crate docopt;
+extern crate rustc_serialize;
+
 use std::thread;
 use gamma_method::GammaMethodProvider;
+use docopt::Docopt;
 
 mod transition;
 mod colorramp;
@@ -14,17 +24,15 @@ mod solar;
 mod gamma_method;
 mod gamma_randr;
 
+const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
-/**
- * Constants
- */
+// Constants
 const NEUTRAL_TEMP:        i32 = 6500;
 const DEFAULT_DAY_TEMP:    i32 = 5500;
 const DEFAULT_NIGHT_TEMP:  i32 = 3500;
 const DEFAULT_BRIGHTNESS:  f64 = 1.0;
 const DEFAULT_GAMMA:       f64 = 1.0;
 
-// TODO Use docopt?
 const USAGE: &'static str = "
 redshift-rs: A Rust clone of RedShift
 
@@ -34,25 +42,51 @@ Usage:
   redshift-rs --version
 
 Options:
-  -h, --help     Display this help message
-  -V, --version  Print version and exit
-  -v, --verbose  Verbose output
+  -h, --help       Display this help message
+  -V, --version    Print version and exit
+  -v, --verbose    Verbose output
 
-  -b DAY:NIGHT   Screen brightness to apply (between 0.1 and 1.0)
-  -l LAT:LON     Use this location (latitude and longitude)
-  -m METHOD      Method to use to set color temperature
-                 (use 'list' to see available providers)
-  -o             One shot mode
-  -O TEMP        One shot manual mode (set color temperature)
-  -p             Print parameters and exit
-  -x             Reset (remove adjustments to screen)
-  -r             Disable temperature transitions
-  -t DAY:NIGHT   Set day/night color temperatures
+  -b <DAY:NIGHT>   Screen brightness to apply (between 0.1 and 1.0)
+  -l <LAT:LON>     Use this location (latitude and longitude)
+  -m <METHOD>      Method to use to set color temperature
+                   (use 'list' to see available providers)
+  -o               One shot mode
+  -O <TEMP>        One shot manual mode (set color temperature)
+  -p               Print parameters and exit
+  -x               Reset (remove adjustments to screen)
+  -r               Disable temperature transitions
+  -t <DAY:NIGHT>   Set day/night color temperatures
 ";
 
+#[derive(RustcDecodable)]
+struct Args {
+    flag_version: bool,
+    flag_verbose: bool,
+
+    arg_b: Option<String>,
+    arg_l: Option<String>,
+    arg_m: Option<String>,
+    arg_o: Option<String>,
+    arg_O: Option<String>,
+
+    flag_p: bool,
+    flag_x: bool,
+    flag_r: bool,
+    arg_t: Option<String>
+}
+
 fn main() {
+
+    let args: Args = Docopt::new(USAGE)
+        .and_then(|d| d.argv(std::env::args().into_iter()).decode())
+        .unwrap_or_else(|e| e.exit());
+
+    if args.flag_version {
+        println!("redshift-rs {}", VERSION);
+        return;
+    }
+
     let mut gamma_state = gamma_randr::RandrMethod.init();
-    let verbose = false;
 
     gamma_state.start();
 
@@ -133,7 +167,9 @@ fn main() {
 
                 let period = scheme.get_period(elev);
                 if period != prev_period {
-                    period.print();
+                    if args.flag_verbose {
+                        period.print();
+                    }
                     prev_period = period;
                 }
 
@@ -149,7 +185,7 @@ fn main() {
                         (1.0-scheme.adjustment_alpha) * color_setting.brightness;
                 }
 
-                if verbose {
+                if args.flag_verbose {
                     if color_setting.temp != prev_color_setting.temp {
                         println!("Color temperature: {:?}K", color_setting.temp);
                     }
