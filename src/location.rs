@@ -26,19 +26,22 @@ impl FromStr for Location {
     type Err = RedshiftError;
 
     fn from_str(s: &str) -> Result<Location, Self::Err> {
+        #[inline] fn m<T>(msg: String) -> Result<T, RedshiftError> {
+            Err(RedshiftError::MalformedArgument(msg))
+        }
+
         let mut parts = s.split(':');
 
         let lat = parts.next()
-            .and_then(|l| l.parse::<f64>().ok())
-            .ok_or(RedshiftError::MalformedArgument)?;
+            .map_or(m(format!("location: {}", s)),
+                    |l| l.parse().or(m(format!("location: {} (of {})", l, s))))?;
 
         let lon = parts.next()
-            .and_then(|l| l.parse::<f64>().ok())
-            .ok_or(RedshiftError::MalformedArgument)?;
+            .map_or(m(format!("location: {}", s)),
+                    |l| l.parse::<f64>().or(m(format!("location: {} (of {})", l, s))))?;
 
-        match parts.next() {
-            Some(..) => Err(RedshiftError::MalformedArgument),
-            None => Ok(Location::new(lat, lon))
-        }
+        parts.next()
+            .map_or(Ok(Location::new(lat, lon)),
+                    |trailing| m(format!("location: trailing {} (of {})", trailing, s)))
     }
 }

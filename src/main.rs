@@ -61,7 +61,7 @@ Options:
 // Error codes returned
 #[derive(Debug)]
 pub enum RedshiftError {
-    MalformedArgument,
+    MalformedArgument(String),
     Version,
     PrintMode
 }
@@ -72,7 +72,7 @@ impl RedshiftError {
     fn fatal(&self) -> bool {
         use RedshiftError::*;
         match *self {
-            MalformedArgument => true,
+            MalformedArgument(_) => true,
             Version | PrintMode => false
         }
     }
@@ -105,24 +105,47 @@ struct Args {
     flag_t: Option<String>
 }
 
+#[inline]
+fn malformed<T>(msg: String) -> Result<T, RedshiftError> {
+    Err(RedshiftError::MalformedArgument(msg))
+}
+
 /// Parse the temperature argument
 ///
 /// Expected as "DAY:NIGHT", where DAY and NIGHT are floating point
 /// numbers. Any other input produces an error
 fn parse_temperature(input: String) -> Result<(i32, i32), RedshiftError> {
     let mut parts = input.split(':');
+
     let day = parts.next()
-        .and_then(|l| l.parse().ok())
-        .ok_or(RedshiftError::MalformedArgument)?;
+        .map_or(malformed(format!("temperature argument: {}", input)),
+                |l| l.parse().or(
+                    malformed(format!("temperature argument: {} (of {})", l, input))))?;
 
     let night = parts.next()
-        .and_then(|l| l.parse().ok())
-        .ok_or(RedshiftError::MalformedArgument)?;
+        .map_or(malformed(format!("temperature argument: {}", input)),
+                |l| l.parse().or(
+                    malformed(format!("temperature argument: {} (of {})", l, input))))?;
 
-    match parts.next() {
-        Some(..) => Err(RedshiftError::MalformedArgument),
-        None => Ok((day, night))
-    }
+    parts.next().map_or(Ok((day, night)),
+                        |_| malformed(format!("temperature argument: {}", input)))
+}
+
+fn parse_brightness(input: String) -> Result<(f64, f64), RedshiftError> {
+    let mut parts = input.split(':');
+
+    let day = parts.next()
+        .map_or(malformed(format!("brightness: {}", input)),
+                |l| l.parse().or(
+                    malformed(format!("brightness: {} (of {})", l, input))))?;
+
+    let night = parts.next()
+        .map_or(Ok(day),
+                |l| l.parse().or(malformed(format!("brightness: {} (of {})", l, input))))?;
+
+    parts.next()
+        .map_or(Ok((day, night)),
+                |trailing| malformed(format!("brightness: trailing {} (of {})", trailing, input)))
 }
 
 fn main() {
@@ -149,20 +172,19 @@ fn main() {
         .map_or((DEFAULT_DAY_TEMP, DEFAULT_NIGHT_TEMP),
                 |input| parse_temperature(input).unwrap_or_else(|e| e.exit()));
 
+    let (bright_day, bright_night) = args.flag_b
+        .map_or((DEFAULT_BRIGHTNESS, DEFAULT_BRIGHTNESS),
+                |input| parse_brightness(input).unwrap_or_else(|e| e.exit()));
 
     /* Init transition scheme */
     let mut scheme = transition::TransitionScheme::new();
     scheme.day.temp = temp_day;
     scheme.night.temp = temp_night;
+    scheme.day.brightness = bright_day;
+    scheme.night.brightness = bright_night;
+
     if verbose {
         println!("Temperatures: {}K at day, {}K at night", temp_day, temp_night);
-    }
-
-    if scheme.day.brightness.is_nan() {
-        scheme.day.brightness = DEFAULT_BRIGHTNESS;
-    }
-    if scheme.night.brightness.is_nan() {
-        scheme.night.brightness = DEFAULT_BRIGHTNESS;
     }
 
     if scheme.day.gamma[0].is_nan() {
