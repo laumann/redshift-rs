@@ -162,11 +162,9 @@ fn main() {
     let verbose = args.flag_verbose || args.flag_p;
 
     // Init location
-    let loc = match args.flag_l {
-        Some(ref input) => input.parse::<location::Location>()
-            .unwrap_or_else(|e| e.exit()),
-        None => location::Location::new(55.7, 12.6)
-    };
+    let loc = args.flag_l
+        .map_or(location::Location::new(55.7, 12.6),
+                |input| input.parse::<location::Location>().unwrap_or_else(|e| e.exit()));
 
     let (temp_day, temp_night) = args.flag_t
         .map_or((DEFAULT_DAY_TEMP, DEFAULT_NIGHT_TEMP),
@@ -199,7 +197,6 @@ fn main() {
         loc.print();
     }
 
-
     if args.flag_p {
         let elev = solar::elevation(systemtime_get_time(), &loc);
         let color_setting = scheme.interpolate_color_settings(elev);
@@ -220,7 +217,7 @@ fn main() {
     let sigint = chan_signal::notify(&[chan_signal::Signal::INT,
                                        chan_signal::Signal::TERM]);
     let (signal_tx, signal_rx) = chan::sync(0);
-    std::thread::spawn(move || {
+    thread::spawn(move || {
         for sig in sigint.iter() {
             signal_tx.send(sig);
         }
@@ -234,7 +231,7 @@ fn main() {
     }
     let (timer_tx, timer_rx) = chan::sync(0);
     let (sleep_tx, sleep_rx) = chan::sync(0);
-    std::thread::spawn(move || {
+    thread::spawn(move || {
         for msg in sleep_rx.iter() {
             match msg {
                 TimerMsg::Sleep(ms) => {
