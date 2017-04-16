@@ -10,12 +10,16 @@ extern crate time;
 extern crate chan;
 extern crate chan_signal;
 
-extern crate docopt;
+extern crate clap;
 extern crate rustc_serialize;
 
+use clap::{App, AppSettings, Arg, ArgSettings};
+
 use std::thread;
+use std::fmt;
 use gamma_method::GammaMethodProvider;
-use docopt::Docopt;
+use std::result;
+use std::error::Error;
 
 mod transition;
 mod colorramp;
@@ -33,88 +37,163 @@ const DEFAULT_NIGHT_TEMP:  i32 = 3500;
 const DEFAULT_BRIGHTNESS:  f64 = 1.0;
 const DEFAULT_GAMMA:       f64 = 1.0;
 
-const USAGE: &'static str = "
-redshift-rs: A Rust clone of RedShift
+const ABOUT: &'static str = "
+Set color temperature of display according to time of day.
 
-Usage:
-  redshift-rs [options]
-  redshift-rs (-h | --help)
-  redshift-rs --version
+A Rust clone of the original Redshift written in C by Jon Lund Steffensen.";
 
-Options:
-  -h, --help       Display this help message
-  -V, --version    Print version and exit
-  -v, --verbose    Verbose output
+const USAGE: &'static str = "\
+    redshift-rs [OPTIONS]
+    redshift-rs (-h | --help)
+    redshift-rs (-V | --version)";
 
-  -b <DAY:NIGHT>   Screen brightness to apply (between 0.1 and 1.0)
-  -l <LAT:LON>     Use this location (latitude and longitude)
-  -m <METHOD>      Method to use to set color temperature
-                   (use 'list' to see available providers)
-  -o               One shot mode
-  -O <TEMP>        One shot manual mode (set color temperature)
-  -p               Print parameters and exit
-  -x               Reset (remove adjustments to screen)
-  -r               Disable temperature transitions
-  -t <DAY:NIGHT>   Set day/night color temperatures
-";
+//   -b <DAY:NIGHT>   Screen brightness to apply (between 0.1 and 1.0)
+//   -l <LAT:LON>     Use this location (latitude and longitude)
+//   -m <METHOD>      Method to use to set color temperature
+//                    (use 'list' to see available providers)
+//   -o               One shot mode
+//   -O <TEMP>        One shot manual mode (set color temperature)
+//   -p               Print parameters and exit
+//   -x               Reset (remove adjustments to screen)
+//   -r               Disable temperature transitions
+//   -t <DAY:NIGHT>   Set day/night color temperatures
+// ";
+
+pub type Result<T> = result::Result<T, Box<Error + Send + Sync>>;
+
 
 // Error codes returned
 #[derive(Debug)]
 pub enum RedshiftError {
     MalformedArgument(String),
-    Version,
-    PrintMode
 }
 
-impl RedshiftError {
-
-    /// Return whether this was a fatal error or not
-    fn fatal(&self) -> bool {
-        use RedshiftError::*;
-        match *self {
-            MalformedArgument(_) => true,
-            Version | PrintMode => false
-        }
-    }
-
-    /// Exit with an error code.
-    /// The error code may not be fatal, in which case no error is printed.
-    fn exit(&self) -> ! {
-        let code = if self.fatal() {
-            println!("{:?}", *self);
-            1
-        } else {
-            0
-        };
-        ::std::process::exit(code);
+impl fmt::Display for RedshiftError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
-#[derive(RustcDecodable)]
+impl Error for RedshiftError {
+    fn description(&self) -> &str {
+        "redshift error"
+    }
+}
+
+fn app<'app>() -> App<'app, 'app> {
+    let arg = |name| Arg::with_name(name).long(name);
+    App::new("redshift-rs")
+        .author("Thomas Jespersen <laumann.thomas@gmail.com>")
+        .version(VERSION)
+        .about(ABOUT)
+        .usage(USAGE)
+        .max_term_width(80)
+        .setting(AppSettings::UnifiedHelpMessage)
+        .setting(AppSettings::ColorNever)
+        .arg(arg("brightness")
+             .short("b")
+             .value_name("DAY:NIGHT")
+             .help("Screen brightness to apply (between 0.1 and 1.0)"))
+        .arg(arg("temperature")
+             .short("t")
+             .value_name("DAY:NIGHT")
+             .help("Set day/night color temperatures"))
+        .arg(arg("no-transition").short("r").help("Disable temperature transitions"))
+        .arg(arg("print").short("p")
+             .help("Print parameters and exit")
+             .conflicts_with_all(&["oneshot", "reset", "oneshot-manual"]))
+        .arg(arg("oneshot").short("o")
+             .help("One shot mode")
+             .conflicts_with_all(&["print", "reset", "oneshot-manual"]))
+        .arg(arg("oneshot-manual").short("O")
+             .help("One shot mode (set color temperature)")
+             .value_name("TEMP")
+             .conflicts_with_all(&["print", "oneshot", "reset"]))
+        .arg(arg("reset").short("x").help("Reset (remove adjustments to screen)"))
+        .arg(arg("verbose").short("v").help("Verbose output"))
+}
+
+/// Selected run mode
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+#[allow(dead_code)]
+enum Mode {
+    /// Run the color adjustment method once and exit
+    OneShot,
+
+    /// Continually run the color adjustment
+    ///
+    /// This is the default mode
+    Continual,
+
+    /// Reset the screen
+    Reset,
+
+    /// Print parameters only and exit
+    Print,
+
+    /// One shot manual mode - set color temperature
+    Manual(i32)
+}
+
 struct Args {
-    flag_version: bool,
-    flag_verbose: bool,
-    flag_b: Option<String>,
-    flag_l: Option<String>,
-    arg_m: Option<String>,
-    flag_o: bool,
-    arg_O: Option<String>,
-    flag_p: bool,
-    flag_x: bool,
-    flag_r: bool,
-    flag_t: Option<String>
+    pub verbose: bool,
+    pub brightness: (f64, f64),
+    pub location: location::Location,
+    pub method: Option<String>,
+    pub temperatures: (i32, i32),
+    pub disable_transition: bool,
+    pub mode: Mode,
+}
+
+impl Args {
+
+    /// Parse the command-line arguments into a Redshift configuration
+    pub fn parse() -> Result<Args> {
+        let matches = app().get_matches();
+
+        let brightness = matches.value_of("brightness")
+            .map_or(Ok((DEFAULT_BRIGHTNESS, DEFAULT_BRIGHTNESS)),
+                    |input| parse_brightness(input))?;
+
+        let temperatures = matches.value_of("temperature")
+            .map_or(Ok((DEFAULT_DAY_TEMP, DEFAULT_NIGHT_TEMP)),
+                    |input| parse_temperature(input))?;
+
+        // Determine run mode
+        let mode = if matches.is_present("print") {
+            Mode::Print
+        } else if matches.is_present("oneshot") {
+            Mode::OneShot
+        } else if let Some(temp) = matches.value_of("oneshot-manual") {
+            Mode::Manual(temp.parse()?)
+        } else if matches.is_present("reset") {
+            Mode::Reset
+        } else {
+            Mode::Continual
+        };
+
+        Ok(Args {
+            verbose: matches.is_present("verbose"),
+            brightness: brightness,
+            location: location::Location::new(55.7, 12.6),
+            method: None,
+            temperatures: temperatures,
+            disable_transition: matches.is_present("no-transition"),
+            mode: mode,
+        })
+    }
 }
 
 #[inline]
-fn malformed<T>(msg: String) -> Result<T, RedshiftError> {
-    Err(RedshiftError::MalformedArgument(msg))
+fn malformed<T>(msg: String) -> Result<T> {
+    Err(Box::new(RedshiftError::MalformedArgument(msg)))
 }
 
 /// Parse the temperature argument
 ///
 /// Expected as "DAY:NIGHT", where DAY and NIGHT are floating point
 /// numbers. Any other input produces an error
-fn parse_temperature(input: String) -> Result<(i32, i32), RedshiftError> {
+fn parse_temperature(input: &str) -> Result<(i32, i32)> {
     let mut parts = input.split(':');
 
     let day = parts.next()
@@ -131,7 +210,7 @@ fn parse_temperature(input: String) -> Result<(i32, i32), RedshiftError> {
                         |_| malformed(format!("temperature argument: {}", input)))
 }
 
-fn parse_brightness(input: String) -> Result<(f64, f64), RedshiftError> {
+fn parse_brightness(input: &str) -> Result<(f64, f64)> {
     let mut parts = input.split(':');
 
     let day = parts.next()
@@ -149,32 +228,26 @@ fn parse_brightness(input: String) -> Result<(f64, f64), RedshiftError> {
 }
 
 fn main() {
-
-    let args: Args = Docopt::new(USAGE)
-        .and_then(|d| d.argv(std::env::args().into_iter()).decode())
-        .unwrap_or_else(|e| e.exit());
-
-    if args.flag_version {
-        println!("redshift-rs {}", VERSION);
-        RedshiftError::Version.exit();
+    match Args::parse().and_then(run) {
+        Ok(exit_code) => ::std::process::exit(exit_code),
+        Err(e) => {
+            println!("{}", e);
+            ::std::process::exit(1);
+        }
     }
+}
 
-    let verbose = args.flag_verbose || args.flag_p;
+// (3) Running continual mode (if requested)
+fn run(args: Args) -> Result<i32> {
+
+    let verbose = args.verbose;
 
     // Init location
-    let loc = args.flag_l
-        .map_or(location::Location::new(55.7, 12.6),
-                |input| input.parse::<location::Location>().unwrap_or_else(|e| e.exit()));
+    let loc = args.location;
+    let (temp_day, temp_night) = args.temperatures;
+    let (bright_day, bright_night) = args.brightness;
 
-    let (temp_day, temp_night) = args.flag_t
-        .map_or((DEFAULT_DAY_TEMP, DEFAULT_NIGHT_TEMP),
-                |input| parse_temperature(input).unwrap_or_else(|e| e.exit()));
-
-    let (bright_day, bright_night) = args.flag_b
-        .map_or((DEFAULT_BRIGHTNESS, DEFAULT_BRIGHTNESS),
-                |input| parse_brightness(input).unwrap_or_else(|e| e.exit()));
-
-    /* Init transition scheme */
+    // Init transition scheme
     let mut scheme = transition::TransitionScheme::new();
     scheme.day.temp = temp_day;
     scheme.night.temp = temp_night;
@@ -192,17 +265,17 @@ fn main() {
         for g in scheme.night.gamma.iter_mut() { *g = DEFAULT_GAMMA }
     }
 
-
     if verbose {
         loc.print();
     }
 
-    if args.flag_p {
+    if args.mode == Mode::Print {
+        // TODO(tj): Print period as well
         let elev = solar::elevation(systemtime_get_time(), &loc);
         let color_setting = scheme.interpolate_color_settings(elev);
         println!("Color temperature: {:?}K", color_setting.temp);
-        println!("Brightness: {:?}", color_setting.brightness);
-        RedshiftError::PrintMode.exit();
+        println!("Brightness: {:.2}", color_setting.brightness);
+        return Ok(0)
     }
 
     let mut gamma_state = gamma_randr::RandrMethod.init();
@@ -210,8 +283,10 @@ fn main() {
 
 
 
-    /* Run continual mode */
-
+    // Running continual mode
+    // TODO(tj): Match on args.mode to determine run mode; move the
+    // inner body of the loop into its own function and move all
+    // looping and channel handling to a run_continual() function
 
     // Create signal thread
     let sigint = chan_signal::notify(&[chan_signal::Signal::INT,
@@ -315,6 +390,7 @@ fn main() {
     sleep_tx.send(TimerMsg::Exit);
 
     gamma_state.restore();
+    Ok(0)
 }
 
 fn systemtime_get_time() -> f64 {
