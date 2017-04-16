@@ -30,13 +30,6 @@ mod gamma_randr;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
-// Constants
-const NEUTRAL_TEMP:        i32 = 6500;
-const DEFAULT_DAY_TEMP:    i32 = 5500;
-const DEFAULT_NIGHT_TEMP:  i32 = 3500;
-const DEFAULT_BRIGHTNESS:  f64 = 1.0;
-const DEFAULT_GAMMA:       f64 = 1.0;
-
 const ABOUT: &'static str = "
 Set color temperature of display according to time of day.
 
@@ -47,22 +40,17 @@ const USAGE: &'static str = "\
     redshift-rs (-h | --help)
     redshift-rs (-V | --version)";
 
-//   -b <DAY:NIGHT>   Screen brightness to apply (between 0.1 and 1.0)
-//   -l <LAT:LON>     Use this location (latitude and longitude)
-//   -m <METHOD>      Method to use to set color temperature
-//                    (use 'list' to see available providers)
-//   -o               One shot mode
-//   -O <TEMP>        One shot manual mode (set color temperature)
-//   -p               Print parameters and exit
-//   -x               Reset (remove adjustments to screen)
-//   -r               Disable temperature transitions
-//   -t <DAY:NIGHT>   Set day/night color temperatures
-// ";
-
 pub type Result<T> = result::Result<T, Box<Error + Send + Sync>>;
 
+// Constants
+const NEUTRAL_TEMP:        i32 = 6500;
+const DEFAULT_DAY_TEMP:    i32 = 5500;
+const DEFAULT_NIGHT_TEMP:  i32 = 3500;
+const DEFAULT_BRIGHTNESS:  f64 = 1.0;
+const DEFAULT_GAMMA:       f64 = 1.0;
 
 // Error codes returned
+// TODO(tj): Improve how this is presented
 #[derive(Debug)]
 pub enum RedshiftError {
     MalformedArgument(String),
