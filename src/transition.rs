@@ -96,17 +96,6 @@ impl TransitionScheme {
         }
     }
 
-    /* Determine how far through a transition progress we are. */
-    pub fn transition_progress(&self, elevation: f64) -> f64 {
-        if elevation < self.low {
-            0.0
-        } else if elevation > self.high {
-            1.0
-        } else {
-            (self.low - elevation) / (self.low - self.high)
-        }
-    }
-
     pub fn get_period(&self, elevation: f64) -> Period {
         if elevation < self.low {
             Period::Night

@@ -4,6 +4,30 @@ use transition;
 use colorramp;
 
 use gamma_method::{GammaMethod, GammaMethodProvider};
+use super::Result;
+use std::error::Error;
+use std::fmt;
+
+/// Wrapper for XCB errors
+pub struct RandrError<T>(xcb::Error<T>);
+
+impl<T> fmt::Display for RandrError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl<T> fmt::Debug for RandrError<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "randr error: {}", self.0.error_code())
+    }
+}
+
+impl<T> Error for RandrError<T> {
+    fn description(&self) -> &str {
+        "RandR error"
+    }
+}
 
 const RANDR_MAJOR_VERSION: u32 = 1;
 const RANDR_MINOR_VERSION: u32 = 3;
@@ -26,6 +50,7 @@ pub struct RandrState {
 
 impl RandrState {
 
+    // TODO(tj): Remove all traces of unwrap()
     fn init() -> RandrState {
         let (conn, screen_num) = xcb::Connection::connect(None).unwrap();
 
@@ -50,7 +75,8 @@ impl RandrState {
         }
     }
 
-    fn set_crtc_temperature(&self, setting: &transition::ColorSetting, crtc: &Crtc) {
+    // Set the temperature for the indicated CRTC
+    fn set_crtc_temperature(&self, setting: &transition::ColorSetting, crtc: &Crtc) -> Result<()> {
         /* Copy saved ramps from CRTC */
         let mut r = crtc.saved_ramps.0.clone();
         let mut g = crtc.saved_ramps.1.clone();
@@ -67,7 +93,9 @@ impl RandrState {
                                       crtc.id,
                                       &r[..],
                                       &g[..],
-                                      &b[..]);
+                                      &b[..])
+            .request_check()
+            .map_err(|e| Box::new(RandrError(e)) as Box<Error>)
     }
 }
 
@@ -79,14 +107,11 @@ fn query_version(conn: &xcb::Connection) {
              reply.minor_version());
 }
 
-/**
- *
- */
 impl GammaMethod for RandrState {
 
-    /**
-     * Restore saved gamma ramps
-     */
+    //
+    // Restore saved gamma ramps
+    //
     fn restore(&self) {
         for crtc in self.crtcs.iter() {
             randr::set_crtc_gamma_checked(&self.conn,
@@ -97,18 +122,17 @@ impl GammaMethod for RandrState {
         }
     }
 
-    fn set_temperature(&self, setting: &transition::ColorSetting) {
+    fn set_temperature(&self, setting: &transition::ColorSetting) -> Result<()> {
         for crtc in self.crtcs.iter() {
-            self.set_crtc_temperature(setting, crtc);
+            self.set_crtc_temperature(setting, crtc)?;
         }
+        Ok(())
     }
 
     /**
      * Find initial information on all the CRTCs
      */
     fn start(&mut self) {
-        //let setup = self.conn.get_setup();
-
         /* Get list of CRTCs for the screen */
         let screen_resources = randr::get_screen_resources(&self.conn,
                                                            self.window_dummy).get_reply().unwrap();

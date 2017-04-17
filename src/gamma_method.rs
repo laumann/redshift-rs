@@ -1,12 +1,13 @@
 use transition;
+use super::Result;
 
 /**
  * Impl for any gamma adjustment method
  */
 pub trait GammaMethod {
     fn restore(&self);
-    
-    fn set_temperature(&self, setting: &transition::ColorSetting);
+
+    fn set_temperature(&self, setting: &transition::ColorSetting) -> Result<()>;
 
     fn start(&mut self);
 }
@@ -21,9 +22,10 @@ pub trait GammaMethodProvider {
 pub struct DummyMethod;
 impl GammaMethod for DummyMethod {
     fn restore(&self) {}
-    
-    fn set_temperature(&self, setting: &transition::ColorSetting) {
+
+    fn set_temperature(&self, setting: &transition::ColorSetting) -> Result<()> {
         println!("Temperature: {}", setting.temp);
+        Ok(())
     }
 
     fn start(&mut self) {

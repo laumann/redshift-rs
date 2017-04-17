@@ -13,7 +13,7 @@ extern crate chan_signal;
 extern crate clap;
 extern crate rustc_serialize;
 
-use clap::{App, AppSettings, Arg, ArgSettings};
+use clap::{App, AppSettings, Arg};
 
 use std::thread;
 use std::fmt;
@@ -40,7 +40,7 @@ const USAGE: &'static str = "\
     redshift-rs (-h | --help)
     redshift-rs (-V | --version)";
 
-pub type Result<T> = result::Result<T, Box<Error + Send + Sync>>;
+pub type Result<T> = result::Result<T, Box<Error>>;
 
 // Constants
 const NEUTRAL_TEMP:        i32 = 6500;
@@ -86,6 +86,10 @@ fn app<'app>() -> App<'app, 'app> {
              .short("t")
              .value_name("DAY:NIGHT")
              .help("Set day/night color temperatures"))
+        .arg(arg("gamma")
+             .short("g")
+             .value_name("R:G:B")
+             .help("Additional gamma correction to apply"))
         .arg(arg("no-transition").short("r").help("Disable temperature transitions"))
         .arg(arg("print").short("p")
              .help("Print parameters and exit")
@@ -126,6 +130,7 @@ enum Mode {
 struct Args {
     pub verbose: bool,
     pub brightness: (f64, f64),
+    pub gamma: (f64, f64, f64),
     pub location: location::Location,
     pub method: Option<String>,
     pub temperatures: (i32, i32),
@@ -147,6 +152,10 @@ impl Args {
             .map_or(Ok((DEFAULT_DAY_TEMP, DEFAULT_NIGHT_TEMP)),
                     |input| parse_temperature(input))?;
 
+        let gamma = matches.value_of("gamma")
+            .map_or(Ok((DEFAULT_GAMMA, DEFAULT_GAMMA, DEFAULT_GAMMA)),
+                    |input| parse_gamma(input))?;
+
         // Determine run mode
         let mode = if matches.is_present("print") {
             Mode::Print
@@ -163,6 +172,7 @@ impl Args {
         Ok(Args {
             verbose: matches.is_present("verbose"),
             brightness: brightness,
+            gamma: gamma,
             location: location::Location::new(55.7, 12.6),
             method: None,
             temperatures: temperatures,
@@ -215,6 +225,29 @@ fn parse_brightness(input: &str) -> Result<(f64, f64)> {
                 |trailing| malformed(format!("brightness: trailing {} (of {})", trailing, input)))
 }
 
+/// A gamma string contains either one floating point value, or three
+/// separated by colons
+fn parse_gamma(input: &str) -> Result<(f64, f64, f64)> {
+    let mut parts = input.split(':');
+
+    let fst = parts.next()
+        .map_or(malformed(format!("gamma: {}", input)),
+                |l| l.parse().or(
+                    malformed(format!("gamma: {} (of {})", l, input))))?;
+
+    if let Some(l) = parts.next() {
+        let g = l.parse().or(malformed(format!("gamma: {} (of {})", l, input)))?;
+
+        let b = parts.next()
+            .map_or(malformed(format!("gamma: {} (of {})", l, input)),
+                    |l| l.parse().or(
+                        malformed(format!("gamma: {} (of {})", l, input))))?;
+        Ok((fst, g, b))
+    } else {
+        Ok((fst, fst, fst))
+    }
+}
+
 fn main() {
     match Args::parse().and_then(run) {
         Ok(exit_code) => ::std::process::exit(exit_code),
@@ -228,8 +261,6 @@ fn main() {
 // (3) Running continual mode (if requested)
 fn run(args: Args) -> Result<i32> {
 
-    let verbose = args.verbose;
-
     // Init location
     let loc = args.location;
     let (temp_day, temp_night) = args.temperatures;
@@ -242,33 +273,81 @@ fn run(args: Args) -> Result<i32> {
     scheme.day.brightness = bright_day;
     scheme.night.brightness = bright_night;
 
-    if verbose {
+    if args.verbose {
         println!("Temperatures: {}K at day, {}K at night", temp_day, temp_night);
     }
 
-    if scheme.day.gamma[0].is_nan() {
-        for g in scheme.day.gamma.iter_mut() { *g = DEFAULT_GAMMA }
-    }
-    if scheme.night.gamma[0].is_nan() {
-        for g in scheme.night.gamma.iter_mut() { *g = DEFAULT_GAMMA }
-    }
+    scheme.day.gamma[0] = args.gamma.0;
+    scheme.day.gamma[1] = args.gamma.1;
+    scheme.day.gamma[2] = args.gamma.2;
 
-    if verbose {
+    scheme.night.gamma[0] = args.gamma.0;
+    scheme.night.gamma[1] = args.gamma.1;
+    scheme.night.gamma[2] = args.gamma.2;
+
+    if args.verbose {
         loc.print();
     }
 
-    if args.mode == Mode::Print {
-        // TODO(tj): Print period as well
-        let elev = solar::elevation(systemtime_get_time(), &loc);
-        let color_setting = scheme.interpolate_color_settings(elev);
-        println!("Color temperature: {:?}K", color_setting.temp);
-        println!("Brightness: {:.2}", color_setting.brightness);
-        return Ok(0)
+    match args.mode {
+        Mode::Print => {
+            let now = systemtime_get_time();
+
+            // Compute elevation
+            let elev = solar::elevation(now, &loc);
+
+            let period = scheme.get_period(elev);
+            period.print();
+
+            // Interpolate between 6500K and calculated temperature
+            let color_setting = scheme.interpolate_color_settings(elev);
+
+            println!("Color temperature: {}K", color_setting.temp);
+            println!("Brightness: {:.2}", color_setting.brightness);
+            return Ok(0)
+        }
+        Mode::Reset => {
+            let mut gamma_state = gamma_randr::RandrMethod.init();
+            gamma_state.start();
+            gamma_state.set_temperature(&transition::ColorSetting {
+                temp: NEUTRAL_TEMP,
+                gamma: [1.0, 1.0, 1.0],
+                brightness: 1.0
+            })?;
+            return Ok(0)
+        }
+        Mode::OneShot => {
+            let now = systemtime_get_time();
+
+            // Compute elevation
+            let elev = solar::elevation(now, &loc);
+
+            if args.verbose {
+                println!("Solar elevation: {}", elev);
+            }
+
+            let period = scheme.get_period(elev);
+            period.print();
+
+            // Interpolate between 6500K and calculated temperature
+            let color_setting = scheme.interpolate_color_settings(elev);
+
+            if args.verbose {
+                println!("Color temperature: {}K", color_setting.temp);
+                println!("Brightness: {:.2}", color_setting.brightness);
+            }
+
+            let mut gamma_state = gamma_randr::RandrMethod.init();
+            gamma_state.start();
+            gamma_state.set_temperature(&color_setting)?;
+
+            return Ok(0)
+        }
+        _ => {}
     }
 
     let mut gamma_state = gamma_randr::RandrMethod.init();
     gamma_state.start();
-
 
 
     // Running continual mode
@@ -330,7 +409,7 @@ fn run(args: Args) -> Result<i32> {
 
                 let period = scheme.get_period(elev);
                 if period != prev_period {
-                    if verbose {
+                    if args.verbose {
                         period.print();
                     }
                     prev_period = period;
@@ -348,7 +427,7 @@ fn run(args: Args) -> Result<i32> {
                         (1.0-scheme.adjustment_alpha) * color_setting.brightness;
                 }
 
-                if verbose {
+                if args.verbose {
                     if color_setting.temp != prev_color_setting.temp {
                         println!("Color temperature: {:?}K", color_setting.temp);
                     }
@@ -356,7 +435,7 @@ fn run(args: Args) -> Result<i32> {
                         println!("Brightness: {:?}", color_setting.brightness);
                     }
                 }
-                gamma_state.set_temperature(&color_setting);
+                gamma_state.set_temperature(&color_setting)?;
 
                 if exiting && !scheme.short_transition() {
                     break
