@@ -8,8 +8,23 @@ use super::Result;
 use std::error::Error;
 use std::fmt;
 
-/// Wrapper for XCB errors
-pub struct RandrError<T>(xcb::Error<T>);
+/// Wrapper for XCB and RandR errors
+pub enum RandrError<T> {
+    Generic(xcb::Error<T>),
+    Conn(xcb::ConnError)
+}
+
+impl<T: 'static> RandrError<T> {
+    fn generic(e: xcb::Error<T>) -> Box<Error> {
+        Box::new(RandrError::Generic(e)) as Box<Error>
+    }
+}
+
+impl RandrError<()> {
+    fn conn(e: xcb::ConnError) -> Box<Error> {
+        Box::new(RandrError::Conn::<()>(e)) as Box<Error>
+    }
+}
 
 impl<T> fmt::Display for RandrError<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -19,7 +34,15 @@ impl<T> fmt::Display for RandrError<T> {
 
 impl<T> fmt::Debug for RandrError<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "randr error: {}", self.0.error_code())
+        use self::RandrError::*;
+        match *self {
+            Generic(ref e) =>
+                write!(f, "randr error: {}", e.error_code()),
+            Conn(xcb::ConnError::Connection) =>
+                write!(f, "xcb connection errors because of socket, pipe or other stream errors"),
+            Conn(ref c) =>
+                write!(f, "{:?}", c),
+        }
     }
 }
 
@@ -51,8 +74,9 @@ pub struct RandrState {
 impl RandrState {
 
     // TODO(tj): Remove all traces of unwrap()
-    fn init() -> RandrState {
-        let (conn, screen_num) = xcb::Connection::connect(None).unwrap();
+    fn init() -> Result<RandrState> {
+        let (conn, screen_num) = xcb::Connection::connect(None)
+            .map_err(RandrError::conn)?;
 
         query_version(&conn);
 
@@ -67,12 +91,12 @@ impl RandrState {
             window_dummy
         };
 
-        RandrState {
+        Ok(RandrState {
             conn: conn,
             screen_num: screen_num,
             window_dummy: window_dummy,
             crtcs: vec![]
-        }
+        })
     }
 
     // Set the temperature for the indicated CRTC
@@ -95,7 +119,7 @@ impl RandrState {
                                       &g[..],
                                       &b[..])
             .request_check()
-            .map_err(|e| Box::new(RandrError(e)) as Box<Error>)
+            .map_err(RandrError::generic)
     }
 }
 
@@ -157,7 +181,7 @@ impl GammaMethod for RandrState {
 
 pub struct RandrMethod;
 impl GammaMethodProvider for RandrMethod {
-    fn init(&self) -> Box<GammaMethod> {
-        Box::new(RandrState::init()) as Box<GammaMethod>
+    fn init(&self) -> Result<Box<GammaMethod>> {
+        RandrState::init().map(|r| Box::new(r) as Box<GammaMethod>)
     }
 }

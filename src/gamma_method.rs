@@ -12,11 +12,12 @@ pub trait GammaMethod {
     fn start(&mut self);
 }
 
-/**
- * Curse my Java genes! Next up is the ProblemFactory
- */
+/// A gamma method provider serves can initialize a new gamma method.
+///
+/// TODO(tj): This is terribly Java-esque in my opinion, but I
+///           currently do not have a better way to handle this.
 pub trait GammaMethodProvider {
-    fn init(&self) -> Box<GammaMethod>;
+    fn init(&self) -> Result<Box<GammaMethod>>;
 }
 
 pub struct DummyMethod;
@@ -34,7 +35,7 @@ impl GammaMethod for DummyMethod {
 }
 
 impl GammaMethodProvider for DummyMethod {
-    fn init(&self) -> Box<GammaMethod> {
-        Box::new(DummyMethod) as Box<GammaMethod>
+    fn init(&self) -> Result<Box<GammaMethod>> {
+        Ok(Box::new(DummyMethod) as Box<GammaMethod>)
     }
 }

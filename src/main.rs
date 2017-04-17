@@ -307,7 +307,7 @@ fn run(args: Args) -> Result<i32> {
             return Ok(0)
         }
         Mode::Reset => {
-            let mut gamma_state = gamma_randr::RandrMethod.init();
+            let mut gamma_state = gamma_randr::RandrMethod.init()?;
             gamma_state.start();
             gamma_state.set_temperature(&transition::ColorSetting {
                 temp: NEUTRAL_TEMP,
@@ -337,7 +337,7 @@ fn run(args: Args) -> Result<i32> {
                 println!("Brightness: {:.2}", color_setting.brightness);
             }
 
-            let mut gamma_state = gamma_randr::RandrMethod.init();
+            let mut gamma_state = gamma_randr::RandrMethod.init()?;
             gamma_state.start();
             gamma_state.set_temperature(&color_setting)?;
 
@@ -346,7 +346,7 @@ fn run(args: Args) -> Result<i32> {
         _ => {}
     }
 
-    let mut gamma_state = gamma_randr::RandrMethod.init();
+    let mut gamma_state = gamma_randr::RandrMethod.init()?;
     gamma_state.start();
 
 
