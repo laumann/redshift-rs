@@ -48,6 +48,8 @@ const DEFAULT_DAY_TEMP:    i32 = 5500;
 const DEFAULT_NIGHT_TEMP:  i32 = 3500;
 const DEFAULT_BRIGHTNESS:  f64 = 1.0;
 const DEFAULT_GAMMA:       f64 = 1.0;
+const MIN_GAMMA:           f64 = 0.1;
+const MAX_GAMMA:           f64 = 10.0;
 
 // Error codes returned
 // TODO(tj): Improve how this is presented
@@ -189,8 +191,8 @@ fn malformed<T>(msg: String) -> Result<T> {
 
 /// Parse the temperature argument
 ///
-/// Expected as "DAY:NIGHT", where DAY and NIGHT are floating point
-/// numbers. Any other input produces an error
+/// Expected as "DAY:NIGHT", where DAY and NIGHT are 32-bit
+/// integers. Any other input produces an error.
 fn parse_temperature(input: &str) -> Result<(i32, i32)> {
     let mut parts = input.split(':');
 
@@ -208,6 +210,10 @@ fn parse_temperature(input: &str) -> Result<(i32, i32)> {
                         |_| malformed(format!("temperature argument: {}", input)))
 }
 
+/// Parse brightness argument
+///
+/// Expected format is "DAY:NIGHT" where DAY and NIGHT are floating
+/// point numbers. Any other input produces an error.
 fn parse_brightness(input: &str) -> Result<(f64, f64)> {
     let mut parts = input.split(':');
 
@@ -228,20 +234,39 @@ fn parse_brightness(input: &str) -> Result<(f64, f64)> {
 /// A gamma string contains either one floating point value, or three
 /// separated by colons
 fn parse_gamma(input: &str) -> Result<(f64, f64, f64)> {
+    let invalid_gamma = |g| g < MIN_GAMMA || g > MAX_GAMMA;
+
     let mut parts = input.split(':');
 
     let fst = parts.next()
         .map_or(malformed(format!("gamma: {}", input)),
                 |l| l.parse().or(
-                    malformed(format!("gamma: {} (of {})", l, input))))?;
+                    malformed(format!("gamma: {} (of {})", l,
+                                      input))))?;
+
+    if invalid_gamma(fst) {
+        return malformed(format!("Gamma value must be between {} and {}. Was {}",
+                                 MIN_GAMMA, MAX_GAMMA, fst));
+    }
 
     if let Some(l) = parts.next() {
-        let g = l.parse().or(malformed(format!("gamma: {} (of {})", l, input)))?;
+        let g = l.parse().or(malformed(format!("gamma: {} (of {})", l,
+                                               input)))?;
+        if invalid_gamma(g) {
+            return malformed(format!("Gamma value must be between {} and {}. Was {}",
+                                     MIN_GAMMA, MAX_GAMMA, g));
+        }
+
 
         let b = parts.next()
             .map_or(malformed(format!("gamma: {} (of {})", l, input)),
                     |l| l.parse().or(
-                        malformed(format!("gamma: {} (of {})", l, input))))?;
+                        malformed(format!("gamma: {} (of {})", l,
+                                          input))))?;
+        if invalid_gamma(b) {
+            return malformed(format!("Gamma value must be between {} and {}. Was {}",
+                                     MIN_GAMMA, MAX_GAMMA, b));
+        }
         Ok((fst, g, b))
     } else {
         Ok((fst, fst, fst))
@@ -249,13 +274,14 @@ fn parse_gamma(input: &str) -> Result<(f64, f64, f64)> {
 }
 
 fn main() {
-    match Args::parse().and_then(run) {
-        Ok(exit_code) => ::std::process::exit(exit_code),
+    ::std::process::exit(match Args::parse().and_then(run) {
+        Ok(exit_code) =>
+            exit_code,
         Err(e) => {
             println!("{}", e);
-            ::std::process::exit(1);
+            1
         }
-    }
+    });
 }
 
 // (3) Running continual mode (if requested)
@@ -327,7 +353,9 @@ fn run(args: Args) -> Result<i32> {
             }
 
             let period = scheme.get_period(elev);
-            period.print();
+            if args.verbose {
+                period.print();
+            }
 
             // Interpolate between 6500K and calculated temperature
             let color_setting = scheme.interpolate_color_settings(elev);

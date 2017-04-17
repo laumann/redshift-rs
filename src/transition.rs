@@ -22,10 +22,10 @@ impl Period {
     }
 }
 
-/**
- * A color setting
- */
-#[derive(PartialEq)]
+/// A color setting
+///
+///
+#[derive(PartialEq, Debug)]
 pub struct ColorSetting {
     pub temp: i32,
     pub gamma: [f64; 3],

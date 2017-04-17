@@ -11,7 +11,8 @@ use std::fmt;
 /// Wrapper for XCB and RandR errors
 pub enum RandrError<T> {
     Generic(xcb::Error<T>),
-    Conn(xcb::ConnError)
+    Conn(xcb::ConnError),
+    UnsupportedVersion(u32, u32)
 }
 
 impl<T: 'static> RandrError<T> {
@@ -23,6 +24,10 @@ impl<T: 'static> RandrError<T> {
 impl RandrError<()> {
     fn conn(e: xcb::ConnError) -> Box<Error> {
         Box::new(RandrError::Conn::<()>(e)) as Box<Error>
+    }
+
+    fn unsupported_version(major: u32, minor: u32) -> Box<Error> {
+        Box::new(RandrError::UnsupportedVersion::<()>(major, minor)) as Box<Error>
     }
 }
 
@@ -42,6 +47,8 @@ impl<T> fmt::Debug for RandrError<T> {
                 write!(f, "xcb connection errors because of socket, pipe or other stream errors"),
             Conn(ref c) =>
                 write!(f, "{:?}", c),
+            UnsupportedVersion(major, minor) =>
+                write!(f, "Unsupported RandR version ({}, {})", major, minor),
         }
     }
 }
@@ -78,7 +85,7 @@ impl RandrState {
         let (conn, screen_num) = xcb::Connection::connect(None)
             .map_err(RandrError::conn)?;
 
-        query_version(&conn);
+        query_version(&conn)?;
 
         let window_dummy = {
             let setup = conn.get_setup();
@@ -106,6 +113,15 @@ impl RandrState {
         let mut g = crtc.saved_ramps.1.clone();
         let mut b = crtc.saved_ramps.2.clone();
 
+        let u16_max1 = u16::max_value() as f64 + 1.0;
+        let ramp_size = crtc.ramp_size as f64;
+        for i in 0 .. r.len() {
+            let v = ((i as f64 / ramp_size) * u16_max1) as u16;
+            r[i] = v;
+            g[i] = v;
+            b[i] = v;
+        }
+
         /* Create new gamma ramps */
         colorramp::colorramp_fill(&mut r[..], &mut g[..], &mut b[..],
                                   setting,
@@ -123,12 +139,18 @@ impl RandrState {
     }
 }
 
-fn query_version(conn: &xcb::Connection) {
+fn query_version(conn: &xcb::Connection) -> Result<()> {
     let reply = randr::query_version(conn,
                                      RANDR_MAJOR_VERSION,
-                                     RANDR_MINOR_VERSION).get_reply().unwrap();
-    println!("RandR {}.{}", reply.major_version(),
-             reply.minor_version());
+                                     RANDR_MINOR_VERSION)
+        .get_reply()
+        .map_err(RandrError::generic)?;
+    if reply.major_version() != RANDR_MAJOR_VERSION || reply.minor_version() < RANDR_MINOR_VERSION {
+        Err(RandrError::unsupported_version(reply.major_version(),
+                                            reply.minor_version()))
+    } else {
+        Ok(())
+    }
 }
 
 impl GammaMethod for RandrState {
