@@ -287,8 +287,6 @@ fn main() {
 // (3) Running continual mode (if requested)
 fn run(args: Args) -> Result<i32> {
 
-    // Init location
-    let loc = args.location;
     let (temp_day, temp_night) = args.temperatures;
     let (bright_day, bright_night) = args.brightness;
 
@@ -299,10 +297,6 @@ fn run(args: Args) -> Result<i32> {
     scheme.day.brightness = bright_day;
     scheme.night.brightness = bright_night;
 
-    if args.verbose {
-        println!("Temperatures: {}K at day, {}K at night", temp_day, temp_night);
-    }
-
     scheme.day.gamma[0] = args.gamma.0;
     scheme.day.gamma[1] = args.gamma.1;
     scheme.day.gamma[2] = args.gamma.2;
@@ -312,7 +306,8 @@ fn run(args: Args) -> Result<i32> {
     scheme.night.gamma[2] = args.gamma.2;
 
     if args.verbose {
-        loc.print();
+        println!("Temperatures: {}K at day, {}K at night", temp_day, temp_night);
+        args.location.print();
     }
 
     match args.mode {
@@ -320,7 +315,7 @@ fn run(args: Args) -> Result<i32> {
             let now = systemtime_get_time();
 
             // Compute elevation
-            let elev = solar::elevation(now, &loc);
+            let elev = solar::elevation(now, &args.location);
 
             let period = scheme.get_period(elev);
             period.print();
@@ -330,7 +325,6 @@ fn run(args: Args) -> Result<i32> {
 
             println!("Color temperature: {}K", color_setting.temp);
             println!("Brightness: {:.2}", color_setting.brightness);
-            return Ok(0)
         }
         Mode::Reset => {
             let mut gamma_state = gamma_randr::RandrMethod.init()?;
@@ -340,13 +334,12 @@ fn run(args: Args) -> Result<i32> {
                 gamma: [1.0, 1.0, 1.0],
                 brightness: 1.0
             })?;
-            return Ok(0)
         }
         Mode::OneShot => {
             let now = systemtime_get_time();
 
             // Compute elevation
-            let elev = solar::elevation(now, &loc);
+            let elev = solar::elevation(now, &args.location);
 
             if args.verbose {
                 println!("Solar elevation: {}", elev);
@@ -368,17 +361,21 @@ fn run(args: Args) -> Result<i32> {
             let mut gamma_state = gamma_randr::RandrMethod.init()?;
             gamma_state.start();
             gamma_state.set_temperature(&color_setting)?;
-
-            return Ok(0)
         }
-        _ => {}
+        Mode::Manual(_temp) => {
+            // TODO(tj): Implement
+        }
+        Mode::Continual => {
+            run_continual_mode(args, scheme)?;
+        }
     }
+    Ok(0)
+}
 
+fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> Result<()> {
     let mut gamma_state = gamma_randr::RandrMethod.init()?;
     gamma_state.start();
 
-
-    // Running continual mode
     // TODO(tj): Match on args.mode to determine run mode; move the
     // inner body of the loop into its own function and move all
     // looping and channel handling to a run_continual() function
@@ -433,7 +430,7 @@ fn run(args: Args) -> Result<i32> {
                 now = systemtime_get_time();
 
                 // Compute elevation
-                let elev = solar::elevation(now, &loc);
+                let elev = solar::elevation(now, &args.location);
 
                 let period = scheme.get_period(elev);
                 if period != prev_period {
@@ -485,7 +482,7 @@ fn run(args: Args) -> Result<i32> {
     sleep_tx.send(TimerMsg::Exit);
 
     gamma_state.restore();
-    Ok(0)
+    Ok(())
 }
 
 fn systemtime_get_time() -> f64 {
