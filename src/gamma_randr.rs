@@ -48,7 +48,7 @@ impl<T> fmt::Debug for RandrError<T> {
             Conn(ref c) =>
                 write!(f, "{:?}", c),
             UnsupportedVersion(major, minor) =>
-                write!(f, "Unsupported RandR version ({}, {})", major, minor),
+                write!(f, "Unsupported RandR version ({}.{})", major, minor),
         }
     }
 }
