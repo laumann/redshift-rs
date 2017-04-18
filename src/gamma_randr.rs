@@ -112,6 +112,8 @@ impl RandrState {
         let mut g = crtc.saved_ramps.1.clone();
         let mut b = crtc.saved_ramps.2.clone();
 
+        // TODO Implement a scratchpad in Crtc for use with computing
+        // and setting RGB values
         let u16_max1 = u16::max_value() as f64 + 1.0;
         let ramp_size = crtc.ramp_size as f64;
         for i in 0 .. r.len() {
@@ -126,8 +128,6 @@ impl RandrState {
                                   setting,
                                   crtc.ramp_size as usize);
 
-        // TODO Use a scratch-pad, and only call
-        // set_crtc_gamma_checked() when ramp values change
         randr::set_crtc_gamma_checked(&self.conn,
                                       crtc.id,
                                       &r[..],
