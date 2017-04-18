@@ -77,7 +77,6 @@ fn app<'app>() -> App<'app, 'app> {
         .version(VERSION)
         .about(ABOUT)
         .usage(USAGE)
-        .max_term_width(80)
         .setting(AppSettings::UnifiedHelpMessage)
         .setting(AppSettings::ColorNever)
         .arg(arg("brightness")
@@ -109,7 +108,6 @@ fn app<'app>() -> App<'app, 'app> {
 
 /// Selected run mode
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
-#[allow(dead_code)]
 enum Mode {
     /// Run the color adjustment method once and exit
     OneShot,
@@ -136,7 +134,7 @@ struct Args {
     pub location: location::Location,
     pub method: Option<String>,
     pub temperatures: (i32, i32),
-    pub disable_transition: bool,
+    pub transition: bool,
     pub mode: Mode,
 }
 
@@ -178,7 +176,7 @@ impl Args {
             location: location::Location::new(55.7, 12.6),
             method: None,
             temperatures: temperatures,
-            disable_transition: matches.is_present("no-transition"),
+            transition: !matches.is_present("no-transition"),
             mode: mode,
         })
     }
@@ -275,8 +273,9 @@ fn parse_gamma(input: &str) -> Result<(f64, f64, f64)> {
 
 fn main() {
     ::std::process::exit(match Args::parse().and_then(run) {
-        Ok(exit_code) =>
-            exit_code,
+        Ok(exit_code) => {
+            exit_code
+        }
         Err(e) => {
             println!("{}", e);
             1
@@ -311,56 +310,39 @@ fn run(args: Args) -> Result<i32> {
     }
 
     match args.mode {
-        Mode::Print => {
-            let now = systemtime_get_time();
-
-            // Compute elevation
-            let elev = solar::elevation(now, &args.location);
-
-            let period = scheme.get_period(elev);
-            period.print();
-
-            // Interpolate between 6500K and calculated temperature
-            let color_setting = scheme.interpolate_color_settings(elev);
-
-            println!("Color temperature: {}K", color_setting.temp);
-            println!("Brightness: {:.2}", color_setting.brightness);
-        }
         Mode::Reset => {
             let mut gamma_state = gamma_randr::RandrMethod.init()?;
-            gamma_state.start();
+            gamma_state.start()?;
             gamma_state.set_temperature(&transition::ColorSetting {
                 temp: NEUTRAL_TEMP,
                 gamma: [1.0, 1.0, 1.0],
                 brightness: 1.0
             })?;
         }
-        Mode::OneShot => {
+        Mode::OneShot | Mode::Print => {
             let now = systemtime_get_time();
+            let print = args.verbose || args.mode == Mode::Print;
 
             // Compute elevation
             let elev = solar::elevation(now, &args.location);
 
-            if args.verbose {
-                println!("Solar elevation: {}", elev);
-            }
-
             let period = scheme.get_period(elev);
-            if args.verbose {
-                period.print();
-            }
 
             // Interpolate between 6500K and calculated temperature
             let color_setting = scheme.interpolate_color_settings(elev);
 
-            if args.verbose {
+            if print {
+                println!("Solar elevation: {}", elev);
+                period.print();
                 println!("Color temperature: {}K", color_setting.temp);
                 println!("Brightness: {:.2}", color_setting.brightness);
             }
 
-            let mut gamma_state = gamma_randr::RandrMethod.init()?;
-            gamma_state.start();
-            gamma_state.set_temperature(&color_setting)?;
+            if args.mode == Mode::OneShot {
+                let mut gamma_state = gamma_randr::RandrMethod.init()?;
+                gamma_state.start()?;
+                gamma_state.set_temperature(&color_setting)?;
+            }
         }
         Mode::Manual(_temp) => {
             // TODO(tj): Implement
@@ -384,7 +366,7 @@ fn run(args: Args) -> Result<i32> {
 ///       of the --no-transition flag
 fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> Result<()> {
     let mut gamma_state = gamma_randr::RandrMethod.init()?;
-    gamma_state.start();
+    gamma_state.start()?;
 
     // Create signal thread
     let sigint = chan_signal::notify(&[chan_signal::Signal::INT,
@@ -396,23 +378,12 @@ fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> R
         }
     });
 
-    // Create timer thread
-    // The timer thread should be modifiable, to
-    enum TimerMsg {
-        Sleep(u64),
-        Exit
-    }
     let (timer_tx, timer_rx) = chan::sync(0);
     let (sleep_tx, sleep_rx) = chan::sync(0);
     thread::spawn(move || {
-        for msg in sleep_rx.iter() {
-            match msg {
-                TimerMsg::Sleep(ms) => {
-                    thread::sleep(std::time::Duration::from_millis(ms));
-                    timer_tx.send(());
-                }
-                TimerMsg::Exit => break
-            }
+        for ms in sleep_rx.iter() {
+            thread::sleep(std::time::Duration::from_millis(ms));
+            timer_tx.send(());
         }
     });
 
@@ -420,7 +391,7 @@ fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> R
     let mut exiting = false;
     let mut prev_color_setting = transition::ColorSetting::new();
     let mut prev_period = transition::Period::None;
-    sleep_tx.send(TimerMsg::Sleep(0));
+    sleep_tx.send(0);
     loop {
         chan_select! {
             signal_rx.recv() -> _signal => {
@@ -475,7 +446,7 @@ fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> R
                 }
 
                 // Sleep for 5 seconds or 0.1 second
-                sleep_tx.send(TimerMsg::Sleep(if scheme.short_transition() { 100 } else { 5000 }));
+                sleep_tx.send(if scheme.short_transition() { 100 } else { 5000 });
 
                 /* Save temperature */
                 prev_color_setting = color_setting;
