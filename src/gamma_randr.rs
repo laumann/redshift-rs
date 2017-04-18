@@ -80,7 +80,6 @@ pub struct RandrState {
 
 impl RandrState {
 
-    // TODO(tj): Remove all traces of unwrap()
     fn init() -> Result<RandrState> {
         let (conn, screen_num) = xcb::Connection::connect(None)
             .map_err(RandrError::conn)?;
@@ -158,14 +157,17 @@ impl GammaMethod for RandrState {
     //
     // Restore saved gamma ramps
     //
-    fn restore(&self) {
+    fn restore(&self) -> Result<()> {
         for crtc in self.crtcs.iter() {
             randr::set_crtc_gamma_checked(&self.conn,
                                           crtc.id,
                                           &crtc.saved_ramps.0[..],
                                           &crtc.saved_ramps.1[..],
-                                          &crtc.saved_ramps.2[..]);
+                                          &crtc.saved_ramps.2[..])
+                .request_check()
+                .map_err(RandrError::generic)?;
         }
+        Ok(())
     }
 
     fn set_temperature(&self, setting: &transition::ColorSetting) -> Result<()> {
@@ -175,18 +177,21 @@ impl GammaMethod for RandrState {
         Ok(())
     }
 
-    /**
-     * Find initial information on all the CRTCs
-     */
-    fn start(&mut self) {
+    /// Find initial information on all the CRTCs
+    fn start(&mut self) -> Result<()> {
         /* Get list of CRTCs for the screen */
         let screen_resources = randr::get_screen_resources(&self.conn,
-                                                           self.window_dummy).get_reply().unwrap();
+                                                           self.window_dummy)
+            .get_reply()
+            .map_err(RandrError::generic)?;
         self.crtcs = Vec::with_capacity(screen_resources.num_crtcs() as usize);
 
         /* Save size and gamma ramps of all CRTCs */
         for crtc in screen_resources.crtcs() {
-            let gamma = randr::get_crtc_gamma(&self.conn, *crtc).get_reply().unwrap();
+            let gamma = randr::get_crtc_gamma(&self.conn, *crtc)
+                .get_reply()
+                .map_err(RandrError::generic)?;
+
             let red = gamma.red().to_vec();
             let green = gamma.green().to_vec();
             let blue = gamma.blue().to_vec();
@@ -197,6 +202,7 @@ impl GammaMethod for RandrState {
                 saved_ramps: (red, green, blue)
             });
         }
+        Ok(())
     }
 }
 

@@ -372,13 +372,19 @@ fn run(args: Args) -> Result<i32> {
     Ok(0)
 }
 
+/// Continual mode
+///
+/// The default functionality of Redshift is to run continually
+/// adjusting the temperature as the day progresses. It is interrupted
+/// by signals INT and TERM that both cause it to terminate.
+///
+/// TODO: Get rid of multiple threads and just check signals in the
+///       right places
+/// TODO: Respect the transition scheme, espectially in the presence
+///       of the --no-transition flag
 fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> Result<()> {
     let mut gamma_state = gamma_randr::RandrMethod.init()?;
     gamma_state.start();
-
-    // TODO(tj): Match on args.mode to determine run mode; move the
-    // inner body of the loop into its own function and move all
-    // looping and channel handling to a run_continual() function
 
     // Create signal thread
     let sigint = chan_signal::notify(&[chan_signal::Signal::INT,
@@ -460,7 +466,9 @@ fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> R
                         println!("Brightness: {:?}", color_setting.brightness);
                     }
                 }
-                gamma_state.set_temperature(&color_setting)?;
+                if color_setting != prev_color_setting {
+                    gamma_state.set_temperature(&color_setting)?;
+                }
 
                 if exiting && !scheme.short_transition() {
                     break
@@ -474,14 +482,7 @@ fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> R
             }
         }
     }
-
-    chan_select! {
-        default => {},
-        timer_rx.recv() => {}
-    }
-    sleep_tx.send(TimerMsg::Exit);
-
-    gamma_state.restore();
+    gamma_state.restore()?;
     Ok(())
 }
 

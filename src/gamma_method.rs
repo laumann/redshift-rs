@@ -5,11 +5,11 @@ use super::Result;
  * Impl for any gamma adjustment method
  */
 pub trait GammaMethod {
-    fn restore(&self);
+    fn restore(&self) -> Result<()>;
 
     fn set_temperature(&self, setting: &transition::ColorSetting) -> Result<()>;
 
-    fn start(&mut self);
+    fn start(&mut self) -> Result<()>;
 }
 
 /// A gamma method provider serves can initialize a new gamma method.
@@ -22,15 +22,16 @@ pub trait GammaMethodProvider {
 
 pub struct DummyMethod;
 impl GammaMethod for DummyMethod {
-    fn restore(&self) {}
+    fn restore(&self) -> Result<()> { Ok(()) }
 
     fn set_temperature(&self, setting: &transition::ColorSetting) -> Result<()> {
         println!("Temperature: {}", setting.temp);
         Ok(())
     }
 
-    fn start(&mut self) {
+    fn start(&mut self) -> Result<()> {
         println!("WARNING: Using dummy gamma method! Display will not affected by this gamma method.");
+        Ok(())
     }
 }
 
