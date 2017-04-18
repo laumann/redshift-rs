@@ -1,6 +1,6 @@
 [package]
 name = "redshift-rs"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Thomas Jespersen <laumann@protonmail.com>"]
 
 [dependencies]
