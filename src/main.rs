@@ -46,10 +46,13 @@ pub type Result<T> = result::Result<T, Box<Error>>;
 const NEUTRAL_TEMP:        i32 = 6500;
 const DEFAULT_DAY_TEMP:    i32 = 5500;
 const DEFAULT_NIGHT_TEMP:  i32 = 3500;
+const MIN_TEMP:            i32 = 1000;
+const MAX_TEMP:            i32 = 25000;
 const DEFAULT_BRIGHTNESS:  f64 = 1.0;
 const DEFAULT_GAMMA:       f64 = 1.0;
 const MIN_GAMMA:           f64 = 0.1;
 const MAX_GAMMA:           f64 = 10.0;
+
 
 // Error codes returned
 // TODO(tj): Improve how this is presented
@@ -166,7 +169,11 @@ impl Args {
         } else if matches.is_present("oneshot") {
             Mode::OneShot
         } else if let Some(temp) = matches.value_of("oneshot-manual") {
-            Mode::Manual(temp.parse()?)
+            let t = temp.parse()?;
+            if t < MIN_TEMP || t > MAX_TEMP {
+                return malformed(format!("Temperature must be between {} and {} (was {})", MIN_TEMP, MAX_TEMP, t));
+            }
+            Mode::Manual(t)
         } else if matches.is_present("reset") {
             Mode::Reset
         } else {
@@ -346,8 +353,19 @@ fn run(args: Args) -> Result<i32> {
                 gamma_state.set_temperature(&color_setting)?;
             }
         }
-        Mode::Manual(_temp) => {
-            // TODO(tj): Implement
+        Mode::Manual(temp) => {
+            if args.verbose {
+                println!("Color temperature: {}", temp);
+            }
+            let color_setting = transition::ColorSetting {
+                temp: temp,
+                gamma: scheme.day.gamma.clone(),
+                brightness: scheme.day.brightness
+            };
+
+            let mut gamma_state = gamma_randr::RandrMethod.init()?;
+            gamma_state.start()?;
+            gamma_state.set_temperature(&color_setting)?;
         }
         Mode::Continual => {
             run_continual_mode(args, scheme)?;
