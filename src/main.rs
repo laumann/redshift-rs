@@ -60,7 +60,11 @@ pub enum RedshiftError {
 
 impl fmt::Display for RedshiftError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
+        use RedshiftError::*;
+        match *self {
+            MalformedArgument(ref msg) =>
+                write!(f, "malformed argument: {}", msg)
+        }
     }
 }
 
@@ -229,10 +233,19 @@ fn parse_brightness(input: &str) -> Result<(f64, f64)> {
                 |trailing| malformed(format!("brightness: trailing {} (of {})", trailing, input)))
 }
 
+
 /// A gamma string contains either one floating point value, or three
 /// separated by colons
 fn parse_gamma(input: &str) -> Result<(f64, f64, f64)> {
-    let invalid_gamma = |g| g < MIN_GAMMA || g > MAX_GAMMA;
+    macro_rules! validate_gamma {
+        ($val:ident) => (
+            if $val < MIN_GAMMA || $val > MAX_GAMMA {
+                return malformed(format!("Gamma value must be between {} and {}. Was {}",
+                                         MIN_GAMMA, MAX_GAMMA, $val));
+            }
+        )
+    }
+
 
     let mut parts = input.split(':');
 
@@ -241,30 +254,19 @@ fn parse_gamma(input: &str) -> Result<(f64, f64, f64)> {
                 |l| l.parse().or(
                     malformed(format!("gamma: {} (of {})", l,
                                       input))))?;
-
-    if invalid_gamma(fst) {
-        return malformed(format!("Gamma value must be between {} and {}. Was {}",
-                                 MIN_GAMMA, MAX_GAMMA, fst));
-    }
+    validate_gamma!(fst);
 
     if let Some(l) = parts.next() {
         let g = l.parse().or(malformed(format!("gamma: {} (of {})", l,
                                                input)))?;
-        if invalid_gamma(g) {
-            return malformed(format!("Gamma value must be between {} and {}. Was {}",
-                                     MIN_GAMMA, MAX_GAMMA, g));
-        }
-
+        validate_gamma!(g);
 
         let b = parts.next()
             .map_or(malformed(format!("gamma: {} (of {})", l, input)),
                     |l| l.parse().or(
                         malformed(format!("gamma: {} (of {})", l,
                                           input))))?;
-        if invalid_gamma(b) {
-            return malformed(format!("Gamma value must be between {} and {}. Was {}",
-                                     MIN_GAMMA, MAX_GAMMA, b));
-        }
+        validate_gamma!(b);
         Ok((fst, g, b))
     } else {
         Ok((fst, fst, fst))
