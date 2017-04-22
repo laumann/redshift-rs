@@ -380,8 +380,6 @@ fn run(args: Args) -> Result<i32> {
 /// adjusting the temperature as the day progresses. It is interrupted
 /// by signals INT and TERM that both cause it to terminate.
 ///
-/// TODO: Get rid of multiple threads and just check signals in the
-///       right places
 /// TODO: Respect the transition scheme, espectially in the presence
 ///       of the --no-transition flag
 fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> Result<()> {
