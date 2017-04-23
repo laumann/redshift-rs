@@ -9,30 +9,30 @@ use location;
 /**
  * Model of atmospheric refraction near horizon (in degrees)
  */
-#[test] pub const SOLAR_ATM_REFRAC: f64 = 0.833;
+#[cfg(test)] pub const SOLAR_ATM_REFRAC: f64 = 0.833;
 
 /**
  * Various elevation constants
  */
-#[test] pub const ASTRO_TWILIGHT_ELEV: f64 = -18.0;
-#[test] pub const NAUT_TWILIGHT_ELEV:  f64 = -12.0;
+#[cfg(test)] pub const ASTRO_TWILIGHT_ELEV: f64 = -18.0;
+#[cfg(test)] pub const NAUT_TWILIGHT_ELEV:  f64 = -12.0;
         pub const CIVIL_TWILIGHT_ELEV: f64 = -6.0;
-#[test] pub const DAYTIME_ELEV:        f64 = (0.0 - SOLAR_ATM_REFRAC);
+#[cfg(test)] pub const DAYTIME_ELEV:        f64 = (0.0 - SOLAR_ATM_REFRAC);
 
 /**
  * Solar times - see the time_angle[] array
  */
 
-#[test] pub const NOON:       usize = 0;
-#[test] pub const MIDNIGHT:   usize = 1;
-#[test] pub const ASTRO_DAWN: usize = 2;
-#[test] pub const NAUT_DAWN:  usize = 3;
-#[test] pub const CIVIL_DAWN: usize = 4;
-#[test] pub const SUNRISE:    usize = 5;
-#[test] pub const SUNSET:     usize = 6;
-#[test] pub const CIVIL_DUSK: usize = 7;
-#[test] pub const NAUT_DUSK:  usize = 8;
-#[test] pub const ASTRO_DUSK: usize = 9;
+#[cfg(test)] pub const NOON:       usize = 0;
+#[cfg(test)] pub const MIDNIGHT:   usize = 1;
+#[cfg(test)] pub const ASTRO_DAWN: usize = 2;
+#[cfg(test)] pub const NAUT_DAWN:  usize = 3;
+#[cfg(test)] pub const CIVIL_DAWN: usize = 4;
+#[cfg(test)] pub const SUNRISE:    usize = 5;
+#[cfg(test)] pub const SUNSET:     usize = 6;
+#[cfg(test)] pub const CIVIL_DUSK: usize = 7;
+#[cfg(test)] pub const NAUT_DUSK:  usize = 8;
+#[cfg(test)] pub const ASTRO_DUSK: usize = 9;
 
 /**
  * Computed angles (or angels), these can be re-computed using the
@@ -216,6 +216,6 @@ mod test {
         let jd2k = JulianDay::from_epoch(10000.0);
         println!("eq_time(1000)={:?}", jd1k.to_julian_cent().equation_of_time());
         println!("eq_time(10000)={:?}", jd2k.to_julian_cent().equation_of_time());
-        solar_elevation(1000, 0.0, 0.0);
+        elevation(1000.0, &location::Location::new(0.0, 0.0));
     }
 }

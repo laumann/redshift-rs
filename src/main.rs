@@ -12,6 +12,7 @@ extern crate chan_signal;
 
 extern crate clap;
 extern crate rustc_serialize;
+#[cfg(feature = "geoclue2")] extern crate dbus;
 
 use clap::{App, AppSettings, Arg};
 
@@ -90,6 +91,10 @@ fn app<'app>() -> App<'app, 'app> {
              .short("b")
              .value_name("DAY:NIGHT")
              .help("Screen brightness to apply (between 0.1 and 1.0)"))
+        .arg(arg("location")
+             .short("l")
+             .value_name("LAT:LON")
+             .help("Your current location"))
         .arg(arg("temperature")
              .short("t")
              .value_name("DAY:NIGHT")
@@ -184,7 +189,7 @@ impl Args {
             verbose: matches.is_present("verbose"),
             brightness: brightness,
             gamma: gamma,
-            location: location::Location::new(55.7, 12.6),
+            location: location::determine(matches.value_of("location"))?,
             method: None,
             temperatures: temperatures,
             transition: !matches.is_present("no-transition"),
