@@ -4,29 +4,33 @@
 //! aka redshift-rs
 //! aka rustshift
 //!
-extern crate xcb;
+
 extern crate time;
 #[macro_use]
 extern crate chan;
 extern crate chan_signal;
+#[macro_use] extern crate lazy_static;
 
 extern crate clap;
-#[cfg(feature = "geoclue2")] extern crate dbus;
 
-use clap::{App, AppSettings, Arg};
+// Optional features for gamma method providers
+#[cfg(feature = "randr")] extern crate xcb;
+
+// Optional features for location providers
+#[cfg(feature = "geoclue2")] extern crate dbus;
 
 use std::thread;
 use std::fmt;
-use gamma_method::GammaMethodProvider;
 use std::result;
 use std::error::Error;
+
+use clap::{App, AppSettings, Arg};
 
 mod transition;
 mod colorramp;
 mod location;
 mod solar;
-mod gamma_method;
-mod gamma_randr;
+mod gamma;
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -59,6 +63,7 @@ const MAX_GAMMA:           f64 = 10.0;
 #[derive(Debug)]
 pub enum RedshiftError {
     MalformedArgument(String),
+    GammaMethodNotFound(String),
 }
 
 impl fmt::Display for RedshiftError {
@@ -66,7 +71,9 @@ impl fmt::Display for RedshiftError {
         use RedshiftError::*;
         match *self {
             MalformedArgument(ref msg) =>
-                write!(f, "malformed argument: {}", msg)
+                write!(f, "malformed argument: {}", msg),
+            GammaMethodNotFound(ref method_name) =>
+                write!(f, "gamma method '{}' not found", method_name),
         }
     }
 }
@@ -90,6 +97,10 @@ fn app<'app>() -> App<'app, 'app> {
              .short("b")
              .value_name("DAY:NIGHT")
              .help("Screen brightness to apply (between 0.1 and 1.0)"))
+        .arg(arg("method")
+             .short("m")
+             .value_name("METHOD")
+             .help("Method to use to set color temperature"))
         .arg(arg("location")
              .short("l")
              .value_name("LAT:LON")
@@ -189,7 +200,7 @@ impl Args {
             brightness: brightness,
             gamma: gamma,
             location: location::determine(matches.value_of("location"))?,
-            method: None,
+            method: matches.value_of("method").map(ToOwned::to_owned),
             temperatures: temperatures,
             transition: !matches.is_present("no-transition"),
             mode: mode,
@@ -324,7 +335,7 @@ fn run(args: Args) -> Result<i32> {
 
     match args.mode {
         Mode::Reset => {
-            let mut gamma_state = gamma_randr::RandrMethod.init()?;
+            let mut gamma_state = gamma::init_gamma_method(args.method.as_ref().map(|s| s.as_str()))?;
             gamma_state.start()?;
             gamma_state.set_temperature(&transition::ColorSetting {
                 temp: NEUTRAL_TEMP,
@@ -352,7 +363,7 @@ fn run(args: Args) -> Result<i32> {
             }
 
             if args.mode == Mode::OneShot {
-                let mut gamma_state = gamma_randr::RandrMethod.init()?;
+                let mut gamma_state = gamma::init_gamma_method(args.method.as_ref().map(|s| s.as_str()))?;
                 gamma_state.start()?;
                 gamma_state.set_temperature(&color_setting)?;
             }
@@ -367,7 +378,7 @@ fn run(args: Args) -> Result<i32> {
                 brightness: scheme.day.brightness
             };
 
-            let mut gamma_state = gamma_randr::RandrMethod.init()?;
+            let mut gamma_state = gamma::init_gamma_method(args.method.as_ref().map(|s| s.as_str()))?;
             gamma_state.start()?;
             gamma_state.set_temperature(&color_setting)?;
         }
@@ -387,7 +398,7 @@ fn run(args: Args) -> Result<i32> {
 /// TODO: Respect the transition scheme, espectially in the presence
 ///       of the --no-transition flag
 fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> Result<()> {
-    let mut gamma_state = gamma_randr::RandrMethod.init()?;
+    let mut gamma_state = gamma::init_gamma_method(args.method.as_ref().map(|s| s.as_str()))?;
     gamma_state.start()?;
 
     // Create signal thread

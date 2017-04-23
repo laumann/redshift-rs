@@ -3,7 +3,7 @@ use xcb::randr;
 use transition;
 use colorramp;
 
-use gamma_method::{GammaMethod, GammaMethodProvider};
+use super::GammaMethod;
 use super::Result;
 use std::error::Error;
 use std::fmt;
@@ -206,10 +206,7 @@ impl GammaMethod for RandrState {
     }
 }
 
-
-pub struct RandrMethod;
-impl GammaMethodProvider for RandrMethod {
-    fn init(&self) -> Result<Box<GammaMethod>> {
-        RandrState::init().map(|r| Box::new(r) as Box<GammaMethod>)
-    }
+/// The init function
+pub fn init() -> Result<Box<GammaMethod>> {
+    RandrState::init().map(|r| Box::new(r) as Box<GammaMethod>)
 }
