@@ -11,7 +11,6 @@ extern crate chan;
 extern crate chan_signal;
 
 extern crate clap;
-extern crate rustc_serialize;
 #[cfg(feature = "geoclue2")] extern crate dbus;
 
 use clap::{App, AppSettings, Arg};

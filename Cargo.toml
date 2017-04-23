@@ -7,7 +7,6 @@ authors = ["Thomas Jespersen <laumann@protonmail.com>"]
 time = "0.1"
 chan-signal = "0.2"
 chan = "0.1"
-rustc-serialize = "0.3"
 clap = "2"
 
 dbus = { version = "0.5", optional = true }
