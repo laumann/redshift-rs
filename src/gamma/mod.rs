@@ -39,7 +39,7 @@ pub trait GammaMethod {
     ///
     /// When running continually, this method is invoked
     /// repeatedly. In oneshot mode, this method is invoked once.
-    fn set_temperature(&self, setting: &transition::ColorSetting) -> Result<()>;
+    fn set_temperature(&mut self, setting: &transition::ColorSetting) -> Result<()>;
 
     /// The restore method is called when Redshift exits from
     /// running in continual mode.
@@ -89,7 +89,7 @@ pub struct DummyMethod;
 impl GammaMethod for DummyMethod {
     fn restore(&self) -> Result<()> { Ok(()) }
 
-    fn set_temperature(&self, setting: &transition::ColorSetting) -> Result<()> {
+    fn set_temperature(&mut self, setting: &transition::ColorSetting) -> Result<()> {
         println!("Temperature: {}", setting.temp);
         Ok(())
     }

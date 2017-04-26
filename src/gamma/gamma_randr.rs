@@ -8,6 +8,9 @@ use super::Result;
 use std::error::Error;
 use std::fmt;
 
+const RANDR_MAJOR_VERSION: u32 = 1;
+const RANDR_MINOR_VERSION: u32 = 3;
+
 /// Wrapper for XCB and RandR errors
 pub enum RandrError<T> {
     Generic(xcb::Error<T>),
@@ -59,18 +62,23 @@ impl<T> Error for RandrError<T> {
     }
 }
 
-const RANDR_MAJOR_VERSION: u32 = 1;
-const RANDR_MINOR_VERSION: u32 = 3;
-
 struct Crtc {
+    /// The id of CRTC (gotten from XCB)
     id: u32,
+
+    /// The ramp size.
     ramp_size: u32,
-    saved_ramps: (Vec<u16>, Vec<u16>, Vec<u16>)
+
+    /// The initial gamma ramp values - used for restore
+    saved_ramps: (Vec<u16>, Vec<u16>, Vec<u16>),
+
+    /// A scratchpad for color computation - it saves the cost of
+    /// allocating three new arrays whenever set_temperature() is
+    /// called.
+    scratch: (Vec<u16>, Vec<u16>, Vec<u16>),
 }
 
-/**
- * Wrapping struct for RandR state
- */
+/// Wrapping struct for RandR state
 pub struct RandrState {
     conn: xcb::Connection,
     screen_num: i32,
@@ -106,35 +114,34 @@ impl RandrState {
     }
 
     // Set the temperature for the indicated CRTC
-    fn set_crtc_temperature(&self, setting: &transition::ColorSetting, crtc: &Crtc) -> Result<()> {
-        /* Copy saved ramps from CRTC */
-        let mut r = crtc.saved_ramps.0.clone();
-        let mut g = crtc.saved_ramps.1.clone();
-        let mut b = crtc.saved_ramps.2.clone();
+    fn set_crtc_temperatures(&mut self, setting: &transition::ColorSetting) -> Result<()> {
+        for crtc in self.crtcs.iter_mut() {
 
-        // TODO Implement a scratchpad in Crtc for use with computing
-        // and setting RGB values
-        let u16_max1 = u16::max_value() as f64 + 1.0;
-        let ramp_size = crtc.ramp_size as f64;
-        for i in 0 .. r.len() {
-            let v = ((i as f64 / ramp_size) * u16_max1) as u16;
-            r[i] = v;
-            g[i] = v;
-            b[i] = v;
+            let (ref mut r, ref mut g, ref mut b) = crtc.scratch;
+
+            let u16_max1 = u16::max_value() as f64 + 1.0;
+            let ramp_size = crtc.ramp_size as f64;
+            for i in 0 .. r.len() {
+                let v = ((i as f64 / ramp_size) * u16_max1) as u16;
+                r[i] = v;
+                g[i] = v;
+                b[i] = v;
+            }
+
+            /* Create new gamma ramps */
+            colorramp::colorramp_fill(&mut r[..], &mut g[..], &mut b[..],
+                                      setting,
+                                      crtc.ramp_size as usize);
+
+            randr::set_crtc_gamma_checked(&self.conn,
+                                          crtc.id,
+                                          &r[..],
+                                          &g[..],
+                                          &b[..])
+                .request_check()
+                .map_err(RandrError::generic)?;
         }
-
-        /* Create new gamma ramps */
-        colorramp::colorramp_fill(&mut r[..], &mut g[..], &mut b[..],
-                                  setting,
-                                  crtc.ramp_size as usize);
-
-        randr::set_crtc_gamma_checked(&self.conn,
-                                      crtc.id,
-                                      &r[..],
-                                      &g[..],
-                                      &b[..])
-            .request_check()
-            .map_err(RandrError::generic)
+        Ok(())
     }
 }
 
@@ -170,11 +177,8 @@ impl GammaMethod for RandrState {
         Ok(())
     }
 
-    fn set_temperature(&self, setting: &transition::ColorSetting) -> Result<()> {
-        for crtc in self.crtcs.iter() {
-            self.set_crtc_temperature(setting, crtc)?;
-        }
-        Ok(())
+    fn set_temperature(&mut self, setting: &transition::ColorSetting) -> Result<()> {
+        self.set_crtc_temperatures(setting)
     }
 
     /// Find initial information on all the CRTCs
@@ -199,7 +203,8 @@ impl GammaMethod for RandrState {
             self.crtcs.push(Crtc {
                 id: *crtc,
                 ramp_size: gamma.size() as u32,
-                saved_ramps: (red, green, blue)
+                saved_ramps: (red.clone(), green.clone(), blue.clone()),
+                scratch: (red, green, blue),
             });
         }
         Ok(())
