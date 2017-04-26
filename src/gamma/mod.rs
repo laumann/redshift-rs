@@ -5,6 +5,7 @@ use transition;
 use super::{Result, RedshiftError};
 
 use std::collections::HashMap;
+use std::error::Error;
 
 type GammaInit = fn() -> Result<Box<GammaMethod>>;
 
@@ -65,20 +66,18 @@ pub fn init_gamma_method(method_name: Option<&str>) -> Result<Box<GammaMethod>> 
         None => {
             /// Loop over each method and try their init function
             /// (skipping the dummy)
-
-            /// TODO(laumann): Rewrite to use an iterator. Something
-            /// like methods.iter().filter(..).find(..) and then map
-            /// None to an Err(..)
-            for (name, method_init) in SUPPORTED_GAMMA_METHODS.iter() {
-                if &name[..] == "dummy" {
-                    continue;
-                }
-                if let Ok(m) = method_init() {
-                    println!("Using method {}", name);
-                    return Ok(m);
-                }
-            }
-            Err(Box::new(RedshiftError::GammaMethodNotFound("none".to_owned())))
+            SUPPORTED_GAMMA_METHODS.iter()
+                .filter_map(|(name, method_init)| {
+                    if &name[..] == "dummy" { None }
+                    else {
+                        method_init()
+                            .map(|s| { println!("Using method {}", name); s })
+                            .ok()
+                    }
+                })
+                .take(1)
+                .next()
+                .ok_or_else(|| Box::new(RedshiftError::GammaMethodNotFound("None".to_owned())) as Box<Error>)
         }
     }
 }
