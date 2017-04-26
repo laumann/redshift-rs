@@ -57,7 +57,14 @@ pub fn is_method_available(method_name: &str) -> bool {
 
 /// Initialise the gamma adjustment method
 ///
+/// If a specific method is requsted (ie method_name is `Some(..)`)
+/// then it is assumed that the method exists and we can call its
+/// initialisation function. If a requested method does not exist,
+/// this function panics.
 ///
+/// If `method_name` is `None` then all available methods (except for
+/// the dummy) are tried in turn until one successfully starts - and
+/// then that method is used.
 pub fn init_gamma_method(method_name: Option<&str>) -> Result<Box<GammaMethod>> {
     match method_name {
         Some(m) => {
