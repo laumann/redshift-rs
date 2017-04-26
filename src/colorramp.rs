@@ -4,11 +4,11 @@ use transition;
  * Generate color ramps from the given color setting and ramp size,
  * and modify the given rgb gamma ramps.
  */
-pub fn colorramp_fill(gamma_r: &mut [u16],
-                      gamma_g: &mut [u16],
-                      gamma_b: &mut [u16],
-                      setting: &transition::ColorSetting,
-                      size: usize)
+pub fn fill(gamma_r: &mut [u16],
+            gamma_g: &mut [u16],
+            gamma_b: &mut [u16],
+            setting: &transition::ColorSetting,
+            size: usize)
 {
     let alpha = (setting.temp as f64 % 100.0) / 100.0;
     let temp_index = (((setting.temp - 1000)/100)*3) as usize;

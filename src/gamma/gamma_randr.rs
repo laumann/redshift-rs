@@ -129,9 +129,8 @@ impl RandrState {
             }
 
             /* Create new gamma ramps */
-            colorramp::colorramp_fill(&mut r[..], &mut g[..], &mut b[..],
-                                      setting,
-                                      crtc.ramp_size as usize);
+            colorramp::fill(&mut r[..], &mut g[..], &mut b[..],
+                            setting, crtc.ramp_size as usize);
 
             randr::set_crtc_gamma_checked(&self.conn,
                                           crtc.id,
