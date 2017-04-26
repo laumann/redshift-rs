@@ -50,6 +50,10 @@ fn init_dummy() -> Result<Box<GammaMethod>> {
     Ok(Box::new(DummyMethod) as Box<GammaMethod>)
 }
 
+pub fn is_method_available(method_name: &str) -> bool {
+    SUPPORTED_GAMMA_METHODS.contains_key(method_name)
+}
+
 /// Initialise the gamma adjustment method
 ///
 ///
@@ -57,12 +61,6 @@ pub fn init_gamma_method(method_name: Option<&str>) -> Result<Box<GammaMethod>> 
     match method_name {
         Some(m) => {
             SUPPORTED_GAMMA_METHODS[m]()
-            // let requested_method = SUPPORTED_GAMMA_METHODS.get(m);
-            // if let Some(ref method_init) = requested_method {
-            //     method_init()
-            // } else {
-            //     Err(Box::new(RedshiftError::GammaMethodNotFound(m.to_owned())))
-            // }
         }
         None => {
             /// Loop over each method and try their init function

@@ -200,7 +200,9 @@ impl Args {
             brightness: brightness,
             gamma: gamma,
             location: location::determine(matches.value_of("location"))?,
-            method: matches.value_of("method").map(ToOwned::to_owned),
+            method: matches.value_of("method")
+                .map(ToOwned::to_owned)
+                .map_or(Ok(None), |s| determine_gamma_method(s).map(Some))?,
             temperatures: temperatures,
             transition: !matches.is_present("no-transition"),
             mode: mode,
@@ -212,6 +214,15 @@ impl Args {
 fn malformed<T>(msg: String) -> Result<T> {
     Err(Box::new(RedshiftError::MalformedArgument(msg)))
 }
+
+fn determine_gamma_method(method: String) -> Result<String> {
+    if gamma::is_method_available(&method[..]) {
+        Ok(method)
+    } else {
+        Err(Box::new(RedshiftError::GammaMethodNotFound(method)))
+    }
+}
+
 
 /// Parse the temperature argument
 ///
