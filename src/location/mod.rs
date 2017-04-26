@@ -66,13 +66,8 @@ impl FromStr for Location {
 /// argument is attempted parsed as "LAT:LON".
 ///
 /// If the location argument is omitted, a default is chosen.
-pub fn determine(location_arg: Option<&str>) -> Result<Location> {
-    match location_arg {
-        Some(loc) => {
-            // Look for provider and use if matched, otherwise parse
-            // as LAT:LON.
-            loc.parse::<Location>()
-        }
-        None => Ok(Location::new(55.7, 12.6))
-    }
+pub fn determine(location_arg: &str) -> Result<Location> {
+    // Look for provider and use if matched, otherwise parse
+    // as LAT:LON.
+    location_arg.parse::<Location>()
 }

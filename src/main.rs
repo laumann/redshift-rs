@@ -10,6 +10,7 @@ extern crate time;
 extern crate chan;
 extern crate chan_signal;
 #[macro_use] extern crate lazy_static;
+extern crate ini;
 
 extern crate clap;
 
@@ -63,6 +64,7 @@ const MAX_GAMMA:           f64 = 10.0;
 #[derive(Debug)]
 pub enum RedshiftError {
     MalformedArgument(String),
+    MalformedConfig(String),
     GammaMethodNotFound(String),
 }
 
@@ -72,6 +74,8 @@ impl fmt::Display for RedshiftError {
         match *self {
             MalformedArgument(ref msg) =>
                 write!(f, "malformed argument: {}", msg),
+            MalformedConfig(ref msg) =>
+                write!(f, "malformed configuration: {}", msg),
             GammaMethodNotFound(ref method_name) =>
                 write!(f, "gamma method '{}' not found", method_name),
         }
@@ -162,24 +166,93 @@ struct Args {
 
 impl Args {
 
+    pub fn defaults() -> Args {
+        Args {
+            verbose: false,
+            brightness: (DEFAULT_BRIGHTNESS, DEFAULT_BRIGHTNESS),
+            gamma: (DEFAULT_GAMMA, DEFAULT_GAMMA, DEFAULT_GAMMA),
+            location: location::Location::new(55.7, 12.6),
+            method: None,
+            temperatures: (DEFAULT_DAY_TEMP, DEFAULT_NIGHT_TEMP),
+            transition: true,
+            mode: Mode::Continual,
+        }
+    }
+
+    pub fn update_from_config(mut self) -> Result<Args> {
+        let conf = std::env::home_dir()
+            .map(|mut path| { path.push(".config/redshift.conf"); path })
+            .and_then(|home| ini::Ini::load_from_file(&home).ok());
+
+        if let Some(conf) = conf {
+            if let Some(brightness_day) = conf.get_from(Some("redshift"), "brightness-day") {
+                self.brightness.0 = brightness_day.parse()
+                    .or_else(|e| malformed_config(format!("could not parse brightness-day: {}", e)))?;
+            }
+            if let Some(brightness_night) = conf.get_from(Some("redshift"), "brightness-night") {
+                self.brightness.1 = brightness_night.parse()
+                    .or_else(|e| malformed_config(format!("could not parse brightness-night: {}", e)))?;
+            }
+
+            if let Some(temp_day) = conf.get_from(Some("redshift"), "temp-day") {
+                self.temperatures.0 = temp_day.parse()
+                    .or_else(|e| malformed_config(format!("could not parse temp-day: {}", e)))?;
+            }
+            if let Some(temp_night) = conf.get_from(Some("redshift"), "temp-night") {
+                self.temperatures.1 = temp_night.parse()
+                    .or_else(|e| malformed_config(format!("could not parse temp-night: {}", e)))?;
+            }
+
+            if let Some(gamma) = conf.get_from(Some("redshift"), "gamma") {
+                self.gamma = parse_gamma(gamma)?;
+            }
+
+            if let Some(transition) = conf.get_from(Some("redshift"), "transition") {
+                self.transition = transition != "0";
+            }
+
+            if let Some("manual") = conf.get_from(Some("redshift"), "location-provider") {
+                let lat = conf.get_from(Some("manual"), "lat");
+                let lon = conf.get_from(Some("manual"), "lon");
+                match (lat, lon) {
+                    (Some(lat), Some(lon)) => {
+                        let lat = lat.parse()
+                            .or_else(|e| malformed_config(format!("could not parse latitude: {}", e)))?;
+                        let lon = lon.parse()
+                            .or_else(|e| malformed_config(format!("could not parse longitude: {}", e)))?;
+                        self.location = location::Location::new(lat, lon);
+                    }
+                    _ => {
+                        return malformed_config(format!("missing 'lat' or 'lon' value for 'manual' location provider"));
+                    }
+                }
+            }
+
+            if let Some(method) = conf.get_from(Some("redshift"), "adjustment-method") {
+                self.method = Some(method.to_owned());
+            }
+        }
+        Ok(self)
+    }
+
     /// Parse the command-line arguments into a Redshift configuration
-    pub fn parse() -> Result<Args> {
+    pub fn update_from_args(mut self) -> Result<Args> {
         let matches = app().get_matches();
 
-        let brightness = matches.value_of("brightness")
-            .map_or(Ok((DEFAULT_BRIGHTNESS, DEFAULT_BRIGHTNESS)),
-                    |input| parse_brightness(input))?;
+        if let Some(input) = matches.value_of("brightness") {
+            self.brightness = parse_brightness(input)?;
+        }
 
-        let temperatures = matches.value_of("temperature")
-            .map_or(Ok((DEFAULT_DAY_TEMP, DEFAULT_NIGHT_TEMP)),
-                    |input| parse_temperature(input))?;
+        if let Some(input) = matches.value_of("temperature") {
+            self.temperatures = parse_temperature(input)?;
+        }
 
-        let gamma = matches.value_of("gamma")
-            .map_or(Ok((DEFAULT_GAMMA, DEFAULT_GAMMA, DEFAULT_GAMMA)),
-                    |input| parse_gamma(input))?;
+        if let Some(input) = matches.value_of("gamma") {
+            self.gamma = parse_gamma(input)?;
+        }
 
         // Determine run mode
-        let mode = if matches.is_present("print") {
+        self.mode = if matches.is_present("print") {
             Mode::Print
         } else if matches.is_present("oneshot") {
             Mode::OneShot
@@ -192,27 +265,31 @@ impl Args {
         } else if matches.is_present("reset") {
             Mode::Reset
         } else {
-            Mode::Continual
+            self.mode
         };
 
-        Ok(Args {
-            verbose: matches.is_present("verbose"),
-            brightness: brightness,
-            gamma: gamma,
-            location: location::determine(matches.value_of("location"))?,
-            method: matches.value_of("method")
-                .map(ToOwned::to_owned)
-                .map_or(Ok(None), |s| determine_gamma_method(s).map(Some))?,
-            temperatures: temperatures,
-            transition: !matches.is_present("no-transition"),
-            mode: mode,
-        })
+        if let Some(location) = matches.value_of("location") {
+            self.location = location::determine(location)?;
+        }
+
+        self.method = matches.value_of("method").map(ToOwned::to_owned)
+            .map_or(Ok(None), |s| determine_gamma_method(s).map(Some))?
+            .or(self.method);
+        self.verbose = matches.is_present("verbose");
+        self.transition = !matches.is_present("no-transition");
+
+        Ok(self)
     }
 }
 
 #[inline]
 fn malformed<T>(msg: String) -> Result<T> {
     Err(Box::new(RedshiftError::MalformedArgument(msg)))
+}
+
+#[inline]
+fn malformed_config<T>(msg: String) -> Result<T> {
+    Err(Box::new(RedshiftError::MalformedConfig(msg)))
 }
 
 fn determine_gamma_method(method: String) -> Result<String> {
@@ -222,7 +299,6 @@ fn determine_gamma_method(method: String) -> Result<String> {
         Err(Box::new(RedshiftError::GammaMethodNotFound(method)))
     }
 }
-
 
 /// Parse the temperature argument
 ///
@@ -307,7 +383,10 @@ fn parse_gamma(input: &str) -> Result<(f64, f64, f64)> {
 }
 
 fn main() {
-    ::std::process::exit(match Args::parse().and_then(run) {
+    let result = Args::defaults().update_from_config()
+        .and_then(|args| args.update_from_args())
+        .and_then(run);
+    ::std::process::exit(match result {
         Ok(exit_code) => {
             exit_code
         }
