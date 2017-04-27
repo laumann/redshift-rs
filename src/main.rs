@@ -184,54 +184,58 @@ impl Args {
             .map(|mut path| { path.push(".config/redshift.conf"); path })
             .and_then(|home| ini::Ini::load_from_file(&home).ok());
 
-        if let Some(conf) = conf {
-            if let Some(brightness_day) = conf.get_from(Some("redshift"), "brightness-day") {
-                self.brightness.0 = brightness_day.parse()
-                    .or_else(|e| malformed_config(format!("could not parse brightness-day: {}", e)))?;
-            }
-            if let Some(brightness_night) = conf.get_from(Some("redshift"), "brightness-night") {
-                self.brightness.1 = brightness_night.parse()
-                    .or_else(|e| malformed_config(format!("could not parse brightness-night: {}", e)))?;
-            }
+        let conf = if let Some(c) = conf { c } else { return Ok(self) };
 
-            if let Some(temp_day) = conf.get_from(Some("redshift"), "temp-day") {
-                self.temperatures.0 = temp_day.parse()
-                    .or_else(|e| malformed_config(format!("could not parse temp-day: {}", e)))?;
-            }
-            if let Some(temp_night) = conf.get_from(Some("redshift"), "temp-night") {
-                self.temperatures.1 = temp_night.parse()
-                    .or_else(|e| malformed_config(format!("could not parse temp-night: {}", e)))?;
-            }
+        let section = conf.section(Some("redshift")).map(Ok)
+            .unwrap_or(malformed_config(format!("config file does not have a 'redshift' section")))?;
 
-            if let Some(gamma) = conf.get_from(Some("redshift"), "gamma") {
-                self.gamma = parse_gamma(gamma)?;
-            }
+        if let Some(brightness_day) = section.get("brightness-day") {
+            self.brightness.0 = brightness_day.parse()
+                .or_else(|e| malformed_config(format!("could not parse brightness-day: {}", e)))?;
+        }
+        if let Some(brightness_night) = section.get("brightness-night") {
+            self.brightness.1 = brightness_night.parse()
+                .or_else(|e| malformed_config(format!("could not parse brightness-night: {}", e)))?;
+        }
 
-            if let Some(transition) = conf.get_from(Some("redshift"), "transition") {
-                self.transition = transition != "0";
-            }
+        if let Some(temp_day) = section.get("temp-day") {
+            self.temperatures.0 = temp_day.parse()
+                .or_else(|e| malformed_config(format!("could not parse temp-day: {}", e)))?;
+        }
+        if let Some(temp_night) = section.get("temp-night") {
+            self.temperatures.1 = temp_night.parse()
+                .or_else(|e| malformed_config(format!("could not parse temp-night: {}", e)))?;
+        }
 
-            if let Some("manual") = conf.get_from(Some("redshift"), "location-provider") {
-                let lat = conf.get_from(Some("manual"), "lat");
-                let lon = conf.get_from(Some("manual"), "lon");
-                match (lat, lon) {
-                    (Some(lat), Some(lon)) => {
-                        let lat = lat.parse()
-                            .or_else(|e| malformed_config(format!("could not parse latitude: {}", e)))?;
-                        let lon = lon.parse()
-                            .or_else(|e| malformed_config(format!("could not parse longitude: {}", e)))?;
-                        self.location = location::Location::new(lat, lon);
-                    }
-                    _ => {
-                        return malformed_config(format!("missing 'lat' or 'lon' value for 'manual' location provider"));
-                    }
+        if let Some(gamma) = section.get("gamma") {
+            self.gamma = parse_gamma(gamma)?;
+        }
+
+        if let Some(transition) = section.get("transition") {
+            self.transition = transition != "0";
+        }
+
+        if let Some("manual") = section.get("location-provider").map(|s| s.as_str()) {
+            let lat = conf.get_from(Some("manual"), "lat");
+            let lon = conf.get_from(Some("manual"), "lon");
+            match (lat, lon) {
+                (Some(lat), Some(lon)) => {
+                    let lat = lat.parse()
+                        .or_else(|e| malformed_config(format!("could not parse latitude: {}", e)))?;
+                    let lon = lon.parse()
+                        .or_else(|e| malformed_config(format!("could not parse longitude: {}", e)))?;
+                    self.location = location::Location::new(lat, lon);
+                }
+                _ => {
+                    return malformed_config(format!("missing 'lat' or 'lon' value for 'manual' location provider"));
                 }
             }
-
-            if let Some(method) = conf.get_from(Some("redshift"), "adjustment-method") {
-                self.method = Some(method.to_owned());
-            }
         }
+
+        if let Some(method) = section.get("adjustment-method") {
+            self.method = Some(method.to_owned());
+        }
+
         Ok(self)
     }
 
