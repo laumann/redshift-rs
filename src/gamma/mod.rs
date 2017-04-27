@@ -12,19 +12,14 @@ type GammaInit = fn() -> Result<Box<GammaMethod>>;
 lazy_static! {
     static ref SUPPORTED_GAMMA_METHODS: HashMap<&'static str, GammaInit> = {
         let mut m: HashMap<&'static str, GammaInit> = HashMap::with_capacity(4);
-        add_randr_method(&mut m);
+
+        #[cfg(feature = "randr")]
+        m.insert("randr", gamma_randr::init);
+
         m.insert("dummy", init_dummy);
         m
     };
 }
-
-#[cfg(feature = "randr")]
-fn add_randr_method<'a>(m: &mut HashMap<&'a str, GammaInit>) {
-    m.insert("randr", gamma_randr::init);
-}
-
-#[cfg(not(feature = "randr"))]
-fn add_randr_method<'a>(_: &mut HashMap<&'a str, GammaInit>) {}
 
 /// Any gamma method provider should implement this trait
 ///
