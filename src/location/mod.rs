@@ -57,17 +57,3 @@ impl FromStr for Location {
                     |trailing| m(format!("location: trailing {} (of {})", trailing, s)))
     }
 }
-
-/// Determine the current location from the given argument.
-///
-/// The location can either be specified as <LAT:LON> or by naming a
-/// particular location provider. If a provider exists whose name
-/// matches the input, then that provider is tried. Otherwise, the
-/// argument is attempted parsed as "LAT:LON".
-///
-/// If the location argument is omitted, a default is chosen.
-pub fn determine(location_arg: &str) -> Result<Location> {
-    // Look for provider and use if matched, otherwise parse
-    // as LAT:LON.
-    location_arg.parse::<Location>()
-}

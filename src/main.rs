@@ -269,7 +269,7 @@ impl Args {
         };
 
         if let Some(location) = matches.value_of("location") {
-            self.location = location::determine(location)?;
+            self.location = location.parse()?;
         }
 
         self.method = matches.value_of("method").map(ToOwned::to_owned)
