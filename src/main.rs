@@ -233,7 +233,9 @@ impl Args {
         }
 
         if let Some(method) = section.get("adjustment-method") {
-            self.method = Some(method.to_owned());
+            self.method = determine_gamma_method(method.to_owned())
+                .or_else(|e| malformed_config(format!("{}", e)))
+                .map(Some)?;
         }
 
         Ok(self)
@@ -276,9 +278,10 @@ impl Args {
             self.location = location.parse()?;
         }
 
-        self.method = matches.value_of("method").map(ToOwned::to_owned)
-            .map_or(Ok(None), |s| determine_gamma_method(s).map(Some))?
-            .or(self.method);
+        if let Some(method) = matches.value_of("method") {
+            self.method = determine_gamma_method(method.to_owned()).map(Some)?;
+        }
+
         self.verbose = matches.is_present("verbose");
         self.transition = !matches.is_present("no-transition");
 
