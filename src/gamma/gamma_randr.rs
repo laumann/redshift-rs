@@ -116,7 +116,6 @@ impl RandrState {
     // Set the temperature for the indicated CRTC
     fn set_crtc_temperatures(&mut self, setting: &transition::ColorSetting) -> Result<()> {
         for crtc in self.crtcs.iter_mut() {
-
             let (ref mut r, ref mut g, ref mut b) = crtc.scratch;
 
             let u16_max1 = u16::max_value() as f64 + 1.0;
@@ -128,7 +127,7 @@ impl RandrState {
                 b[i] = v;
             }
 
-            /* Create new gamma ramps */
+            // Compute new gamma ramps
             colorramp::fill(&mut r[..], &mut g[..], &mut b[..],
                             setting, crtc.ramp_size as usize);
 
@@ -182,14 +181,14 @@ impl GammaMethod for RandrState {
 
     /// Find initial information on all the CRTCs
     fn start(&mut self) -> Result<()> {
-        /* Get list of CRTCs for the screen */
+        // Get list of CRTCs for the screen
         let screen_resources = randr::get_screen_resources(&self.conn,
                                                            self.window_dummy)
             .get_reply()
             .map_err(RandrError::generic)?;
         self.crtcs = Vec::with_capacity(screen_resources.num_crtcs() as usize);
 
-        /* Save size and gamma ramps of all CRTCs */
+        // Save size and gamma ramps of all CRTCs
         for crtc in screen_resources.crtcs() {
             let gamma = randr::get_crtc_gamma(&self.conn, *crtc)
                 .get_reply()

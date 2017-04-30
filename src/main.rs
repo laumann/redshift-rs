@@ -60,7 +60,6 @@ const MAX_GAMMA:           f64 = 10.0;
 
 
 // Error codes returned
-// TODO(tj): Improve how this is presented
 #[derive(Debug)]
 pub enum RedshiftError {
     MalformedArgument(String),
@@ -404,9 +403,7 @@ fn main() {
     });
 }
 
-// (3) Running continual mode (if requested)
 fn run(args: Args) -> Result<i32> {
-
     let (temp_day, temp_night) = args.temperatures;
     let (bright_day, bright_night) = args.brightness;
 
@@ -427,7 +424,7 @@ fn run(args: Args) -> Result<i32> {
 
     if args.verbose {
         println!("Temperatures: {}K at day, {}K at night", temp_day, temp_night);
-        args.location.print();
+        println!("{}", args.location);
     }
 
     match args.mode {

@@ -9,13 +9,19 @@ mod geoclue2;
 use std::str::FromStr;
 use super::{Result, RedshiftError};
 use std::error::Error;
+use std::fmt;
 
-/**
- * Latitude and longitude location
- */
+/// Location by latitude and longitude
 pub struct Location {
     pub lat: f64,
     pub lon: f64
+}
+
+impl fmt::Display for Location {
+    // TODO(tj): Print N/E/S/W for lat/lon
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Location {:2}, {:2}", self.lat, self.lon)
+    }
 }
 
 impl Location {
@@ -24,11 +30,6 @@ impl Location {
             lat: lat,
             lon: lon
         }
-    }
-
-    pub fn print(&self) {
-        // TODO(tj): Print N/E/S/W for lat/lon
-        println!("Location {:2}, {:2}", self.lat, self.lon);
     }
 }
 
