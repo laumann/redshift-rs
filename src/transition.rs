@@ -1,4 +1,5 @@
 use solar;
+use std::fmt;
 
 /* Periods of day */
 #[derive(Debug, PartialEq)]
@@ -9,14 +10,14 @@ pub enum Period {
     Transition(f64)
 }
 
-impl Period {
-    pub fn print(&self) {
+impl fmt::Display for Period {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             Period::None | Period::Day | Period::Night => {
-                println!("Period: {:?}", *self);
+                write!(f, "Period: {:?}", *self)
             }
             Period::Transition(t) => {
-                println!("Period: {} ({:.*}% day)", "Transition", 2, t * 100.0);
+                write!(f, "Period: {} ({:.*}% day)", "Transition", 2, t * 100.0)
             }
         }
     }

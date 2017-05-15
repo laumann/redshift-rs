@@ -451,7 +451,7 @@ fn run(args: Args) -> Result<i32> {
 
             if print {
                 println!("Solar elevation: {}", elev);
-                period.print();
+                println!("{}", period);
                 println!("Color temperature: {}K", color_setting.temp);
                 println!("Brightness: {:.2}", color_setting.brightness);
             }
@@ -539,7 +539,7 @@ fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> R
                 let period = scheme.get_period(elev);
                 if period != prev_period {
                     if args.verbose {
-                        period.print();
+                        println!("{}", period);
                     }
                     prev_period = period;
                 }
