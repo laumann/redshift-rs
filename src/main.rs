@@ -352,15 +352,13 @@ fn parse_brightness(input: &str) -> Result<(f64, f64)> {
 /// A gamma string contains either one floating point value, or three
 /// separated by colons
 fn parse_gamma(input: &str) -> Result<(f64, f64, f64)> {
-    macro_rules! validate_gamma {
-        ($val:ident) => (
-            if $val < MIN_GAMMA || $val > MAX_GAMMA {
-                return malformed(format!("Gamma value must be between {} and {}. Was {}",
-                                         MIN_GAMMA, MAX_GAMMA, $val));
-            }
-        )
-    }
 
+    let validate_gamma = |g| if g < MIN_GAMMA || g > MAX_GAMMA {
+        malformed(format!("Gamma value must be between {} and {}. Was {}",
+                          MIN_GAMMA, MAX_GAMMA, g))
+    } else {
+        Ok(())
+    };
 
     let mut parts = input.split(':');
 
@@ -369,19 +367,19 @@ fn parse_gamma(input: &str) -> Result<(f64, f64, f64)> {
                 |l| l.parse().or(
                     malformed(format!("gamma: {} (of {})", l,
                                       input))))?;
-    validate_gamma!(fst);
+    validate_gamma(fst)?;
 
     if let Some(l) = parts.next() {
         let g = l.parse().or(malformed(format!("gamma: {} (of {})", l,
                                                input)))?;
-        validate_gamma!(g);
+        validate_gamma(g)?;
 
         let b = parts.next()
             .map_or(malformed(format!("gamma: {} (of {})", l, input)),
                     |l| l.parse().or(
                         malformed(format!("gamma: {} (of {})", l,
                                           input))))?;
-        validate_gamma!(b);
+        validate_gamma(b)?;
         Ok((fst, g, b))
     } else {
         Ok((fst, fst, fst))
@@ -580,8 +578,7 @@ fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> R
             }
         }
     }
-    gamma_state.restore()?;
-    Ok(())
+    gamma_state.restore()
 }
 
 fn systemtime_get_time() -> f64 {
