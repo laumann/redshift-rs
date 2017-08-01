@@ -5,6 +5,7 @@
  * from some JavaScript code)
  */
 use location;
+use std::ops;
 
 /**
  * Model of atmospheric refraction near horizon (in degrees)
@@ -16,7 +17,7 @@ use location;
  */
 #[cfg(test)] pub const ASTRO_TWILIGHT_ELEV: f64 = -18.0;
 #[cfg(test)] pub const NAUT_TWILIGHT_ELEV:  f64 = -12.0;
-        pub const CIVIL_TWILIGHT_ELEV: f64 = -6.0;
+             pub const CIVIL_TWILIGHT_ELEV: f64 = -6.0;
 #[cfg(test)] pub const DAYTIME_ELEV:        f64 = (0.0 - SOLAR_ATM_REFRAC);
 
 /**
@@ -52,63 +53,69 @@ use location;
 //     1.8849555921538759,  // ASTRO_DUSK
 // ];
 
-/* A Julian Day */
-pub type JulianDay = f64;
-pub trait JulianDays {
-    fn from_epoch(t: f64) -> JulianDay;
-    fn to_julian_cent(self) -> JulianCent;
-    fn to_epoch(self) -> f64;
+/// A Julian day
+#[derive(Debug, Clone, Copy)]
+pub struct JulianDay(f64);
+
+impl ops::Deref for JulianDay {
+    type Target = f64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
-impl JulianDays for JulianDay {
+
+impl JulianDay {
     fn from_epoch(t: f64) -> JulianDay {
-        ((t / 86400.0) + 2440587.5) as JulianDay
+        JulianDay((t / 86400.0) + 2440587.5)
     }
 
+    #[allow(dead_code)]
     fn to_epoch(self) -> f64 {
-        (self - 2440587.5) * 86400.0
+        (self.0 - 2440587.5) * 86400.0
     }
 
     fn to_julian_cent(self) -> JulianCent {
-        ((self - 2451545.0) / 36525.0) as JulianCent
+        JulianCent((self.0 - 2451545.0) / 36525.0)
     }
 }
 
-/* A Julian century since J2000.0  */
-pub type JulianCent = f64;
-pub trait JulianCents {
-    fn to_julian_day(self) -> JulianDay;
-    fn sun_geom_mean_lon(self) -> f64;
-    fn sun_geom_mean_anomaly(self) -> f64;
-    fn earth_orbit_eccentricity(self) -> f64;
-    fn sun_equation_of_center(self) -> f64;
-    fn sun_true_lon(self) -> f64;
-    fn sun_apparent_lon(self) -> f64;
-    fn mean_ecliptic_obliquity(self) -> f64;
-    fn obliquity_corr(self) -> f64;
-    fn solar_declination(self) -> f64;
-    fn equation_of_time(self) -> f64;
+/// A Julian century since J2000.0
+#[derive(Debug, Clone, Copy)]
+pub struct JulianCent(f64);
+
+impl ops::Deref for JulianCent {
+    type Target = f64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
-impl JulianCents for JulianCent {
+
+impl JulianCent {
+
+    /// This turns out to be unused, but I've left it in here for documentation.
+    #[allow(dead_code)]
     fn to_julian_day(self) -> JulianDay {
-        ((self * 36525.0) + 2451545.0) as JulianDay
+        JulianDay(((self.0 * 36525.0) + 2451545.0))
     }
 
     fn sun_geom_mean_lon(self) -> f64 {
-        ((280.46646 + self * (36000.76983 + self * 0.0003032)) % 360.0).to_radians()
+        ((280.46646 + self.0 * (36000.76983 + self.0 * 0.0003032)) % 360.0).to_radians()
     }
 
     fn sun_geom_mean_anomaly(self) -> f64 {
-        (357.52911 + self * (35999.05029 - self * 0.0001537)).to_radians()
+        (357.52911 + self.0 * (35999.05029 - self.0 * 0.0001537)).to_radians()
     }
 
     fn earth_orbit_eccentricity(self) -> f64 {
-        0.016708634 - self * (0.000042037 + self * 0.0000001267)
+        0.016708634 - self.0 * (0.000042037 + self.0 * 0.0000001267)
     }
 
     fn sun_equation_of_center(self) -> f64 {
         let m = self.sun_geom_mean_anomaly();
-        let c = m.sin() * (1.914602 - self * (0.004817 + 0.000014 * self))
-            + (2.0*m).sin() * (0.019993 - 0.000101 * self)
+        let c = m.sin() * (1.914602 - self.0 * (0.004817 + 0.000014 * self.0))
+            + (2.0*m).sin() * (0.019993 - 0.000101 * self.0)
             + (3.0*m).sin() * 0.000289;
         c.to_radians()
     }
@@ -117,20 +124,20 @@ impl JulianCents for JulianCent {
         self.sun_geom_mean_lon() + self.sun_equation_of_center()
     }
 
-    /* Apparent longitude of the sun (right ascension) */
+    /// Apparent longitude of the sun (right ascension)
     fn sun_apparent_lon(self) -> f64 {
         let o = self.sun_true_lon();
-        (o.to_degrees() - 0.00569 - 0.00478 * (125.04 - 1934.136 * self).to_radians().sin()).to_radians()
+        (o.to_degrees() - 0.00569 - 0.00478 * (125.04 - 1934.136 * self.0).to_radians().sin()).to_radians()
     }
 
     fn mean_ecliptic_obliquity(self) -> f64 {
-        let sec = 21.448 - self * (46.815 + self * (0.00059 - self * 0.001813));
+        let sec = 21.448 - self.0 * (46.815 + self.0 * (0.00059 - self.0 * 0.001813));
         (23.0 + (26.0 + (sec/60.0))/60.0).to_radians()
     }
 
     fn obliquity_corr(self) -> f64 {
         let e0 = self.mean_ecliptic_obliquity();
-        let omega = 125.04 - self * 1934.136;
+        let omega = 125.04 - self.0 * 1934.136;
         (e0.to_degrees() + 0.00256 * omega.to_radians().cos()).to_radians()
     }
 
@@ -140,7 +147,7 @@ impl JulianCents for JulianCent {
         (e.sin() * lambda.sin()).asin()
     }
 
-    /* Difference between true solar time and mean solar time */
+    /// Difference between true solar time and mean solar time
     fn equation_of_time(self) -> f64 {
         let l0 = self.sun_geom_mean_lon();
         let e = self.earth_orbit_eccentricity();
@@ -156,17 +163,6 @@ impl JulianCents for JulianCent {
     }
 }
 
-// #[inline]
-// fn copysign(x: f64, y: f64) -> f64 {
-//     if y.is_sign_positive() ^ x.is_sign_positive() { -x } else { x }
-// }
-
-// pub fn hour_angle_from_elevation(lat: f64, decl: f64, elev: f64) -> f64 {
-//     let omega = (elev.abs().cos() - lat.to_radians().sin() * decl.sin()).acos()
-//         / (lat.to_radians().cos() * decl.cos());
-//     copysign(omega, -elev)
-// }
-
 pub fn elevation_from_hour_angle(lat: f64, decl: f64, ha: f64) -> f64 {
     (ha.cos() * lat.to_radians().cos() * decl.cos()
      + lat.to_radians().sin() * decl.sin()).asin()
@@ -174,7 +170,7 @@ pub fn elevation_from_hour_angle(lat: f64, decl: f64, ha: f64) -> f64 {
 
 pub fn elevation_from_time(jd: JulianDay, loc: &location::Location) -> f64 {
     let t = jd.to_julian_cent();
-    let offset = (jd - jd.round() - 0.5) * 1440.0;
+    let offset = (jd.0 - jd.round() - 0.5) * 1440.0;
 
     let eq_time = t.equation_of_time();
     let ha = ((720.0 - offset - eq_time)/4.0 - loc.lon).to_radians();
