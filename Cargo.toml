@@ -14,7 +14,7 @@ rust-ini = "0.10"
 dbus = { version = "0.5", optional = true }
 
 [dependencies.xcb]
-version = "0.7"
+version = "0.8"
 features = ["randr"]
 optional = true
 
