@@ -5,7 +5,7 @@ authors = ["Thomas Jespersen <laumann@protonmail.com>"]
 
 [dependencies]
 time = "0.1"
-chan-signal = "0.2"
+chan-signal = "0.3"
 chan = "0.1"
 clap = "2"
 lazy_static = "0.2"
