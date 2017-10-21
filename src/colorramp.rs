@@ -17,7 +17,7 @@ pub fn fill(gamma_r: &mut [u16],
                                          &BLACKBODY_COLOR[temp_index..temp_index+3],
                                          &BLACKBODY_COLOR[temp_index+3..temp_index+6]);
 
-    let mut gammas = [gamma_r, gamma_g, gamma_b];
+    let gammas = [gamma_r, gamma_g, gamma_b];
 
     // Compute gamma, based on other gamma value
     let u16_max1 = u16::max_value() as f64 + 1.0;

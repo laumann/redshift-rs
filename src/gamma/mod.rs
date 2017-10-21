@@ -66,8 +66,8 @@ pub fn init_gamma_method(method_name: Option<&str>) -> Result<Box<GammaMethod>> 
             SUPPORTED_GAMMA_METHODS[m]()
         }
         None => {
-            /// Loop over each method and try their init function
-            /// (skipping the dummy)
+            // Loop over each method and try their init function
+            // (skipping the dummy)
             SUPPORTED_GAMMA_METHODS.iter()
                 .filter_map(|(name, method_init)| {
                     if &name[..] == "dummy" { None }
