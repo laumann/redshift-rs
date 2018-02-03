@@ -57,10 +57,12 @@ const DEFAULT_BRIGHTNESS:  f64 = 1.0;
 const DEFAULT_GAMMA:       f64 = 1.0;
 const MIN_GAMMA:           f64 = 0.1;
 const MAX_GAMMA:           f64 = 10.0;
+const MIN_BRIGHTNESS:      f64 = 0.1;
+const MAX_BRIGHTNESS:      f64 = 1.0;
 
 
 // Error codes returned
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RedshiftError {
     MalformedArgument(String),
     MalformedConfig(String),
@@ -344,10 +346,19 @@ fn parse_brightness(input: &str) -> Result<(f64, f64)> {
                 |l| l.parse().or(malformed(format!("brightness: {} (of {})", l, input))))?;
 
     parts.next()
-        .map_or(Ok((day, night)),
-                |trailing| malformed(format!("brightness: trailing {} (of {})", trailing, input)))
-}
+        .map_or(Ok(()),
+                |trailing| malformed(format!("brightness: trailing {} (of {})", trailing, input)))?;
 
+    // Ensure numbers are in range
+    if day < MIN_BRIGHTNESS
+        || day > MAX_BRIGHTNESS
+        || night < MIN_BRIGHTNESS
+        || night > MAX_BRIGHTNESS {
+        malformed(format!("Brightness values must be between {:.1} and {:.1}", MIN_BRIGHTNESS, MAX_BRIGHTNESS))
+    } else {
+        Ok((day, night))
+    }
+}
 
 /// A gamma string contains either one floating point value, or three
 /// separated by colons
@@ -584,4 +595,23 @@ fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> R
 fn systemtime_get_time() -> f64 {
     let now = time::get_time();
     now.sec as f64 + (now.nsec as f64 / 1_000_000_000.0)
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    #[test]
+    pub fn test_parse_brightness() {
+        let input = "4500:3500";
+
+        let r = parse_brightness(input);
+        assert!(r.is_err());
+
+        let e = r.unwrap_err();
+        assert!(e.is::<RedshiftError>());
+
+        let e: RedshiftError = *e.downcast().unwrap();
+        assert_eq!(RedshiftError::MalformedArgument("Brightness values must be between 0.1 and 1.0".to_string()), e);
+    }
 }
