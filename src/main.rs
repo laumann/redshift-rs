@@ -6,13 +6,10 @@
 //!
 
 extern crate time;
-#[macro_use]
-extern crate chan;
-extern crate chan_signal;
 #[macro_use] extern crate lazy_static;
 extern crate ini;
-
 extern crate clap;
+extern crate mio;
 
 // Optional features for gamma method providers
 #[cfg(feature = "randr")] extern crate xcb;
@@ -20,12 +17,14 @@ extern crate clap;
 // Optional features for location providers
 #[cfg(feature = "geoclue2")] extern crate dbus;
 
-use std::thread;
 use std::fmt;
 use std::result;
 use std::error::Error;
+use std::time::Duration;
 
 use clap::{App, AppSettings, Arg};
+
+use mio::{Poll, PollOpt, Token, Registration, SetReadiness, Events, Ready};
 
 use transition::{TransitionScheme, ColorSetting, Period};
 use location::Location;
@@ -63,6 +62,35 @@ const MAX_GAMMA:           f64 = 10.0;
 const MIN_BRIGHTNESS:      f64 = 0.1;
 const MAX_BRIGHTNESS:      f64 = 1.0;
 
+/// A wrapper struct for the return value of Registration::new2()
+struct RegReady(Registration, SetReadiness);
+
+impl RegReady {
+    fn set_readable(&self) {
+        let _ = self.1.set_readiness(Ready::readable());
+    }
+
+    fn registration(&self) -> &Registration {
+        &self.0
+    }
+}
+
+lazy_static! {
+    static ref REG_READY: RegReady = {
+        let (registration, set_readiness) = Registration::new2();
+        RegReady(registration, set_readiness)
+    };
+}
+
+const CTRL_C: Token = Token(0);
+
+extern "C" {
+    fn signal(sig: u32, cb: extern fn(u32)) -> fn(u32);
+}
+
+extern fn interrupt(_sig: u32) {
+    REG_READY.set_readable();
+}
 
 // Error codes returned
 #[derive(Debug, PartialEq, Eq)]
@@ -518,89 +546,74 @@ fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> R
     let mut gamma_state = gamma::init_gamma_method(args.method.as_ref().map(|s| s.as_str()))?;
     gamma_state.start()?;
 
-    // Create signal thread
-    let sigint = chan_signal::notify(&[chan_signal::Signal::INT,
-                                       chan_signal::Signal::TERM]);
-    let (signal_tx, signal_rx) = chan::sync(0);
-    thread::spawn(move || {
-        for sig in sigint.iter() {
-            signal_tx.send(sig);
-        }
-    });
+    unsafe {
+        signal(2, interrupt);
+    }
 
-    let (timer_tx, timer_rx) = chan::sync(0);
-    let (sleep_tx, sleep_rx) = chan::sync(0);
-    thread::spawn(move || {
-        for ms in sleep_rx.iter() {
-            thread::sleep(std::time::Duration::from_millis(ms));
-            timer_tx.send(());
-        }
-    });
+    let poll = Poll::new()?;
+    poll.register(REG_READY.registration(), CTRL_C, Ready::readable(), PollOpt::edge())?;
 
     let mut now;
     let mut exiting = false;
     let mut prev_color_setting = ColorSetting::new();
     let mut prev_period = Period::None;
-    sleep_tx.send(0);
+    let mut events = Events::with_capacity(256);
+    let mut sleep = if scheme.short_transition() { 100 } else { 5000 };
     loop {
-        chan_select! {
-            signal_rx.recv() -> _signal => {
-                if exiting {
-                    break // If already exiting, just exit immediately
-                }
-                exiting = true;
-                scheme.short_trans_delta = 1;
-                scheme.short_trans_len = 2;
-                scheme.adjustment_alpha = 0.1;
-            },
-            timer_rx.recv() => {
-                now = systemtime_get_time();
+        poll.poll(&mut events, Duration::from_millis(sleep).into())?;
+        if events.is_empty() {
+            now = systemtime_get_time();
 
-                // Compute elevation
-                let elev = solar::elevation(now, &args.location);
+            // Compute elevation
+            let elev = solar::elevation(now, &args.location);
 
-                let period = scheme.get_period(elev);
-                if period != prev_period {
-                    if args.verbose {
-                        println!("{}", period);
-                    }
-                    prev_period = period;
-                }
-
-                // Interpolate between 6500K and calculated temperature
-                let mut color_setting = scheme.interpolate_color_settings(elev);
-
-                /* Ongoing short transition? */
-                if scheme.short_transition() {
-                    scheme.adjust_transition_alpha();
-                    color_setting.temp = (scheme.adjustment_alpha * NEUTRAL_TEMP as f64 +
-                                          (1.0-scheme.adjustment_alpha) * color_setting.temp as f64) as i32;
-                    color_setting.brightness = scheme.adjustment_alpha * 1.0 +
-                        (1.0-scheme.adjustment_alpha) * color_setting.brightness;
-                }
-
+            let period = scheme.get_period(elev);
+            if period != prev_period {
                 if args.verbose {
-                    if color_setting.temp != prev_color_setting.temp {
-                        println!("Color temperature: {:?}K", color_setting.temp);
-                    }
-                    if color_setting.brightness != prev_color_setting.brightness {
-                        println!("Brightness: {:?}", color_setting.brightness);
-                    }
+                    println!("{}", period);
                 }
-                if color_setting != prev_color_setting {
-                    gamma_state.set_temperature(&color_setting)?;
-                }
-
-                if exiting && !scheme.short_transition() {
-                    break
-                }
-
-                // Sleep for 5 seconds or 0.1 second
-                sleep_tx.send(if scheme.short_transition() { 100 } else { 5000 });
-
-                /* Save temperature */
-                prev_color_setting = color_setting;
+                prev_period = period;
             }
+
+            // Interpolate between 6500K and calculated temperature
+            let mut color_setting = scheme.interpolate_color_settings(elev);
+
+            /* Ongoing short transition? */
+            if scheme.short_transition() {
+                scheme.adjust_transition_alpha();
+                color_setting.temp = (scheme.adjustment_alpha * NEUTRAL_TEMP as f64 +
+                                      (1.0-scheme.adjustment_alpha) * color_setting.temp as f64) as i32;
+                color_setting.brightness = scheme.adjustment_alpha * 1.0 +
+                    (1.0-scheme.adjustment_alpha) * color_setting.brightness;
+            }
+
+            if args.verbose {
+                if color_setting.temp != prev_color_setting.temp {
+                    println!("Color temperature: {:?}K", color_setting.temp);
+                }
+                if color_setting.brightness != prev_color_setting.brightness {
+                    println!("Brightness: {:?}", color_setting.brightness);
+                }
+            }
+            if color_setting != prev_color_setting {
+                gamma_state.set_temperature(&color_setting)?;
+            }
+
+            if exiting && !scheme.short_transition() {
+                break
+            }
+
+            // Sleep for 5 seconds or 0.1 second
+            sleep = if scheme.short_transition() { 100 } else { 5000 };
+
+            /* Save temperature */
+            prev_color_setting = color_setting;
+        } else {
+            if exiting { break; }
+            exiting = true;
+            scheme.short_trans_delta = 1;
+            scheme.short_trans_len = 2;
+            scheme.adjustment_alpha = 0.1;
         }
     }
     gamma_state.restore()
