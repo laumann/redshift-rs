@@ -85,7 +85,7 @@ lazy_static! {
 const CTRL_C: Token = Token(0);
 
 extern "C" {
-    fn signal(sig: u32, cb: extern fn(u32)) -> fn(u32);
+    fn signal(sig: u32, cb: extern fn(u32)) -> extern fn(u32);
 }
 
 extern fn interrupt(_sig: u32) {
@@ -561,60 +561,60 @@ fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> R
     let mut sleep = if scheme.short_transition() { 100 } else { 5000 };
     loop {
         poll.poll(&mut events, Duration::from_millis(sleep).into())?;
-        if events.is_empty() {
-            now = systemtime_get_time();
-
-            // Compute elevation
-            let elev = solar::elevation(now, &args.location);
-
-            let period = scheme.get_period(elev);
-            if period != prev_period {
-                if args.verbose {
-                    println!("{}", period);
-                }
-                prev_period = period;
-            }
-
-            // Interpolate between 6500K and calculated temperature
-            let mut color_setting = scheme.interpolate_color_settings(elev);
-
-            /* Ongoing short transition? */
-            if scheme.short_transition() {
-                scheme.adjust_transition_alpha();
-                color_setting.temp = (scheme.adjustment_alpha * NEUTRAL_TEMP as f64 +
-                                      (1.0-scheme.adjustment_alpha) * color_setting.temp as f64) as i32;
-                color_setting.brightness = scheme.adjustment_alpha * 1.0 +
-                    (1.0-scheme.adjustment_alpha) * color_setting.brightness;
-            }
-
-            if args.verbose {
-                if color_setting.temp != prev_color_setting.temp {
-                    println!("Color temperature: {:?}K", color_setting.temp);
-                }
-                if color_setting.brightness != prev_color_setting.brightness {
-                    println!("Brightness: {:?}", color_setting.brightness);
-                }
-            }
-            if color_setting != prev_color_setting {
-                gamma_state.set_temperature(&color_setting)?;
-            }
-
-            if exiting && !scheme.short_transition() {
-                break
-            }
-
-            // Sleep for 5 seconds or 0.1 second
-            sleep = if scheme.short_transition() { 100 } else { 5000 };
-
-            /* Save temperature */
-            prev_color_setting = color_setting;
-        } else {
-            if exiting { break; }
+        if !events.is_empty() {
+            if exiting || events.iter().count() > 1 { break; }
             exiting = true;
             scheme.short_trans_delta = 1;
             scheme.short_trans_len = 2;
             scheme.adjustment_alpha = 0.1;
+            continue;
         }
+        now = systemtime_get_time();
+
+        // Compute elevation
+        let elev = solar::elevation(now, &args.location);
+
+        let period = scheme.get_period(elev);
+        if period != prev_period {
+            if args.verbose {
+                println!("{}", period);
+            }
+            prev_period = period;
+        }
+
+        // Interpolate between 6500K and calculated temperature
+        let mut color_setting = scheme.interpolate_color_settings(elev);
+
+        /* Ongoing short transition? */
+        if scheme.short_transition() {
+            scheme.adjust_transition_alpha();
+            color_setting.temp = (scheme.adjustment_alpha * NEUTRAL_TEMP as f64 +
+                                  (1.0-scheme.adjustment_alpha) * color_setting.temp as f64) as i32;
+            color_setting.brightness = scheme.adjustment_alpha * 1.0 +
+                (1.0-scheme.adjustment_alpha) * color_setting.brightness;
+        }
+
+        if args.verbose {
+            if color_setting.temp != prev_color_setting.temp {
+                println!("Color temperature: {:?}K", color_setting.temp);
+            }
+            if color_setting.brightness != prev_color_setting.brightness {
+                println!("Brightness: {:?}", color_setting.brightness);
+            }
+        }
+        if color_setting != prev_color_setting {
+            gamma_state.set_temperature(&color_setting)?;
+        }
+
+        if exiting && !scheme.short_transition() {
+            break
+        }
+
+        // Sleep for 5 seconds or 0.1 second
+        sleep = if scheme.short_transition() { 100 } else { 5000 };
+
+        /* Save temperature */
+        prev_color_setting = color_setting;
     }
     gamma_state.restore()
 }
