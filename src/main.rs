@@ -27,6 +27,9 @@ use std::error::Error;
 
 use clap::{App, AppSettings, Arg};
 
+use transition::{TransitionScheme, ColorSetting, Period};
+use location::Location;
+
 mod transition;
 mod colorramp;
 mod location;
@@ -158,7 +161,7 @@ struct Args {
     pub verbose: bool,
     pub brightness: (f64, f64),
     pub gamma: (f64, f64, f64),
-    pub location: location::Location,
+    pub location: Location,
     pub method: Option<String>,
     pub temperatures: (i32, i32),
     pub transition: bool,
@@ -172,7 +175,7 @@ impl Args {
             verbose: false,
             brightness: (DEFAULT_BRIGHTNESS, DEFAULT_BRIGHTNESS),
             gamma: (DEFAULT_GAMMA, DEFAULT_GAMMA, DEFAULT_GAMMA),
-            location: location::Location::new(55.7, 12.6),
+            location: Location::new(55.7, 12.6),
             method: None,
             temperatures: (DEFAULT_DAY_TEMP, DEFAULT_NIGHT_TEMP),
             transition: true,
@@ -225,7 +228,7 @@ impl Args {
                         .or_else(|e| malformed_config(format!("could not parse latitude: {}", e)))?;
                     let lon = lon.parse()
                         .or_else(|e| malformed_config(format!("could not parse longitude: {}", e)))?;
-                    self.location = location::Location::new(lat, lon);
+                    self.location = Location::new(lat, lon);
                 }
                 _ => {
                     return malformed_config(format!("missing 'lat' or 'lon' value for 'manual' location provider"));
@@ -417,7 +420,7 @@ fn run(args: Args) -> Result<i32> {
     let (bright_day, bright_night) = args.brightness;
 
     // Init transition scheme
-    let mut scheme = transition::TransitionScheme::new();
+    let mut scheme = TransitionScheme::new();
     scheme.day.temp = temp_day;
     scheme.night.temp = temp_night;
     scheme.day.brightness = bright_day;
@@ -436,46 +439,57 @@ fn run(args: Args) -> Result<i32> {
         println!("{}", args.location);
     }
 
+    #[inline]
+    fn oneshot(scheme: &TransitionScheme, loc: &Location) -> (f64, Period, ColorSetting) {
+        let now = systemtime_get_time();
+        // Compute elevation
+        let elev = solar::elevation(now, loc);
+
+        let period = scheme.get_period(elev);
+
+        // Interpolate between 6500K and calculated temperature
+        let color_setting = scheme.interpolate_color_settings(elev);
+
+        (elev, period, color_setting)
+    }
+
+    // Print elevation, period and color setting
+    #[inline]
+    fn print_settings(elev: f64, period: &Period, color_setting: &ColorSetting) {
+        println!("Solar elevation: {}", elev);
+        println!("{}", period);
+        println!("Color temperature: {}K", color_setting.temp);
+        println!("Brightness: {:.2}", color_setting.brightness);
+    }
+
     match args.mode {
         Mode::Reset => {
             let mut gamma_state = gamma::init_gamma_method(args.method.as_ref().map(|s| s.as_str()))?;
             gamma_state.start()?;
-            gamma_state.set_temperature(&transition::ColorSetting {
+            gamma_state.set_temperature(&ColorSetting {
                 temp: NEUTRAL_TEMP,
                 gamma: [1.0, 1.0, 1.0],
                 brightness: 1.0
             })?;
         }
-        Mode::OneShot | Mode::Print => {
-            let now = systemtime_get_time();
-            let print = args.verbose || args.mode == Mode::Print;
-
-            // Compute elevation
-            let elev = solar::elevation(now, &args.location);
-
-            let period = scheme.get_period(elev);
-
-            // Interpolate between 6500K and calculated temperature
-            let color_setting = scheme.interpolate_color_settings(elev);
-
-            if print {
-                println!("Solar elevation: {}", elev);
-                println!("{}", period);
-                println!("Color temperature: {}K", color_setting.temp);
-                println!("Brightness: {:.2}", color_setting.brightness);
+        Mode::OneShot => {
+            let (elev, period, color_setting) = oneshot(&scheme, &args.location);
+            if args.verbose {
+                print_settings(elev, &period, &color_setting);
             }
-
-            if args.mode == Mode::OneShot {
-                let mut gamma_state = gamma::init_gamma_method(args.method.as_ref().map(|s| s.as_str()))?;
-                gamma_state.start()?;
-                gamma_state.set_temperature(&color_setting)?;
-            }
+            let mut gamma_state = gamma::init_gamma_method(args.method.as_ref().map(|s| s.as_str()))?;
+            gamma_state.start()?;
+            gamma_state.set_temperature(&color_setting)?;
+        }
+        Mode::Print => {
+            let (elev, period, color_setting) = oneshot(&scheme, &args.location);
+            print_settings(elev, &period, &color_setting);
         }
         Mode::Manual(temp) => {
             if args.verbose {
                 println!("Color temperature: {}", temp);
             }
-            let color_setting = transition::ColorSetting {
+            let color_setting = ColorSetting {
                 temp: temp,
                 gamma: scheme.day.gamma.clone(),
                 brightness: scheme.day.brightness
@@ -525,8 +539,8 @@ fn run_continual_mode(args: Args, mut scheme: transition::TransitionScheme) -> R
 
     let mut now;
     let mut exiting = false;
-    let mut prev_color_setting = transition::ColorSetting::new();
-    let mut prev_period = transition::Period::None;
+    let mut prev_color_setting = ColorSetting::new();
+    let mut prev_period = Period::None;
     sleep_tx.send(0);
     loop {
         chan_select! {
