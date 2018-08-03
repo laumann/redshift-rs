@@ -81,7 +81,6 @@ struct Crtc {
 /// Wrapping struct for RandR state
 pub struct RandrState {
     conn: xcb::Connection,
-    screen_num: i32,
     window_dummy: u32,
     crtcs: Vec<Crtc>
 }
@@ -107,7 +106,6 @@ impl RandrState {
 
         Ok(RandrState {
             conn: conn,
-            screen_num: screen_num,
             window_dummy: window_dummy,
             crtcs: vec![]
         })

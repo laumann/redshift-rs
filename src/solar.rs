@@ -97,7 +97,7 @@ impl JulianCent {
     /// This turns out to be unused, but I've left it in here for documentation.
     #[allow(dead_code)]
     fn to_julian_day(self) -> JulianDay {
-        JulianDay(((self.0 * 36525.0) + 2451545.0))
+        JulianDay((self.0 * 36525.0) + 2451545.0)
     }
 
     fn sun_geom_mean_lon(self) -> f64 {
